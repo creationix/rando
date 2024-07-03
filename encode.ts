@@ -1,8 +1,14 @@
-const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+const chars =
+  "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 
-export function stringify(val: unknown, dict: unknown[] = []): string {
-  const seenPrimitives = new Map<number | string, number>();
-  const seenObjects = new Map<unknown[] | object, number>();
+export function sizeNeeded(num: number): number {
+  if (num === 0) return 0;
+  return Math.floor(Math.log(num) / Math.log(chars.length) + 1);
+}
+
+export function encode(val: unknown, dict: unknown[] = []): string {
+  const seenPrimitives = new Map<number | string, [number, number]>();
+  const seenObjects = new Map<unknown[] | object, [number, number]>();
   const knownPrimitives = new Map<number | string, number>();
   const knownObjects = new Map<unknown[] | object, number>();
   for (let i = 0, l = dict.length; i < l; i++) {
@@ -38,6 +44,27 @@ export function stringify(val: unknown, dict: unknown[] = []): string {
   }
 
   function encodeString(str: string): void {
+    // Encode small hexadecimal looking strings as a number to save space
+    if (str.length <= 13 && /^[1-9a-f][0-9a-f]*$/.test(str)) {
+      return header(parseInt(str, 16), "#");
+    }
+    // Break up large strings so parts can be reused
+    if (str.length > 13) {
+      const parts = str.match(
+        /(?:[^a-zA-Z0-9_ .-]*[a-zA-Z0-9_ .-]+|[^a-zA-Z0-9_ .-]+)/g
+      )!;
+      if (parts.length > 1 && parts[parts.length - 1].length <= 2) {
+        parts[parts.length - 2] += parts.pop();
+      }
+      if (parts && parts.length > 1 && parts.join("").length === str.length) {
+        const start = offset;
+        for (let i = 0, l = parts.length; i < l; i++) {
+          encodeUnknown(parts[i]);
+        }
+        return header(offset - start, "/");
+      }
+    }
+    // Otherwise encode as normal strings
     const start = offset;
     append(str);
     header(offset - start, "$");
@@ -45,19 +72,22 @@ export function stringify(val: unknown, dict: unknown[] = []): string {
 
   function encodeNumber(num: number): void {
     if (isNearlyInteger(num)) {
+      // Encode integers as numbers
       if (num >= 0) {
         header(num, "+");
       } else {
-        header(-num, "-");
+        header(-1 - num, "~");
       }
-    } else if (isNearlyInteger(num * 100) && num > 0) {
+    } else if (num > 0 && num < 1e8 && isNearlyInteger(num * 100)) {
+      // Fractions that are percentages encode as percentages
       header(Math.round(num * 100), "%");
-    } else if (isNearlyInteger(num * 360) && num > 0) {
+    } else if (num > 0 && num < 1e7 && isNearlyInteger(num * 360)) {
+      // Fractions that are factors of 360 encode as degrees
       header(Math.round(num * 360), "@");
     } else {
+      // Encode as decimal string for everything else
       const start = offset;
-      const float = num.toExponential;
-      append(num.toString());
+      append((Math.round(num * 1e10) / 1e10).toString());
       header(offset - start, ".");
     }
   }
@@ -90,11 +120,18 @@ export function stringify(val: unknown, dict: unknown[] = []): string {
     }
 
     if (seenPrimitives.has(val)) {
-      return header(offset - seenPrimitives.get(val)!, "*");
+      const [seenOffset, seenLen] = seenPrimitives.get(val)!;
+      const dist = offset - seenOffset;
+      if (sizeNeeded(dist) * 2 + 1 < seenLen) {
+        return header(dist, "*");
+      }
     }
 
+    const start = offset;
     encodeVal(val);
-    seenPrimitives.set(val, offset);
+    if (offset - start > 3) {
+      seenPrimitives.set(val, [offset, offset - start]);
+    }
   }
 
   function checkObject<T extends unknown[] | object>(
@@ -108,14 +145,28 @@ export function stringify(val: unknown, dict: unknown[] = []): string {
     }
     for (const seen of seenObjects.keys()) {
       if (sameShape(seen, val)) {
-        return header(offset - seenObjects.get(seen)!, "*");
+        const [seenOffset, seenLen] = seenObjects.get(seen)!;
+        const dist = offset - seenOffset;
+        if (sizeNeeded(dist) + 1 < seenLen) {
+          return header(dist, "*");
+        }
       }
     }
+    const start = offset;
     encodeVal(val);
-    seenObjects.set(val, offset);
+    seenObjects.set(val, [offset, offset - start]);
   }
 
   function encodeUnknown(val: unknown): void {
+    if (val === true) {
+      return header(0, "!");
+    }
+    if (val === false) {
+      return header(1, "!");
+    }
+    if (val === null) {
+      return header(2, "!");
+    }
     if (typeof val === "string") {
       checkPrimitive<string>(encodeString, val);
     } else if (typeof val === "number") {
@@ -162,10 +213,15 @@ function strlen(str: string): number {
   return new TextEncoder().encode(str).length;
 }
 
-console.log(stringify([["Hello"], ["Hello"], ["Hello"]]));
-console.log(stringify([1, 2, 3]));
-console.log(stringify({ a: 1, b: 2, c: 3 }));
+console.log(encode([["Hello"], ["Hello"], ["Hello"]]));
+console.log(encode([1, 2, 3]));
+console.log(encode({ a: 1, b: 2, c: 3 }));
 
+for (let i = 0; i < 10; i++) {
+  console.log(i, encode([2 ** i, 10 ** i, 64 ** i, 64 ** i - 1]));
+  console.log(i, encode([i / 360, i / 100, -(i ** 5)]));
+  console.log(i, encode([i, -i]));
+}
 const bigdoc = {
   id: "0001",
   type: "donut",
@@ -189,13 +245,13 @@ const bigdoc = {
     { id: "5004", type: "Maple" },
   ],
 };
-console.log(stringify(bigdoc));
-console.log(stringify(bigdoc, ["id", "type"]));
+console.log(encode(bigdoc));
+console.log(encode(bigdoc, ["id", "type"]));
 
-console.log(stringify([Math.PI, Math.E]));
+console.log(encode([Math.PI, Math.E]));
 
-console.log(stringify([3 + 123 / 360, 2 + 1 / 360, 15 + 90 / 360]));
-console.log(stringify("😊"));
+console.log(encode([3 + 123 / 360, 2 + 1 / 360, 15 + 90 / 360]));
+console.log(encode("😊"));
 
 const dict = [
   "content-length",
@@ -213,5 +269,5 @@ const doc = {
   ],
 };
 
-console.log(stringify(doc));
-console.log(stringify(doc, dict));
+console.log(encode(doc));
+console.log(encode(doc, dict));
