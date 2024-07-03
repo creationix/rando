@@ -1,4 +1,4 @@
-const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
 
 export function stringify(val: unknown): string {
   const seenStrings: Record<string, number> = {};
@@ -78,8 +78,13 @@ export function stringify(val: unknown): string {
         }
       } else if (isNearlyInteger(val * 100) && val > 0) {
         header(Math.round(val * 100), "%");
+      } else if (isNearlyInteger(val * 360) && val > 0) {
+        header(Math.round(val * 360), "@");
       } else {
-        throw new Error("TODO: encode float: " + val);
+        const start = offset;
+        const float = val.toExponential;
+        append(val.toString());
+        header(offset - start, ".");
       }
     } else if (Array.isArray(val)) {
       encodeArray(val);
@@ -151,3 +156,6 @@ console.log(
     ],
   })
 );
+console.log(stringify([Math.PI, Math.E]));
+
+console.log(stringify([3 + 123 / 360, 2 + 1 / 360, 15 + 90 / 360]));
