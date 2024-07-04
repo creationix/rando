@@ -6,7 +6,50 @@ export function sizeNeeded(num: number): number {
   return Math.floor(Math.log(num) / Math.log(chars.length) + 1);
 }
 
-export function encode(val: unknown, dict: unknown[] = []): string {
+interface Tags {
+  string?: string | number;
+  decstring?: string | number;
+  hexstring?: string | number;
+  splitstring?: string | number;
+  posint?: string | number;
+  negint?: string | number;
+  percent?: string | number;
+  degree?: string | number;
+  float?: string | number;
+  list?: string | number;
+  map?: string | number;
+  ref?: string | number;
+  ptr?: string | number;
+  simple?: string | number;
+}
+
+const defaultTags: Tags = {
+  string: "$",
+  decstring: "|",
+  hexstring: "#",
+  splitstring: "/",
+  posint: "+",
+  negint: "~",
+  percent: "%",
+  degree: "@",
+  float: ".",
+  list: "[",
+  map: "{",
+  ref: "&",
+  ptr: "*",
+  simple: "!",
+};
+
+let arrays = 0;
+let objects = 0;
+
+const pointerLimit = 64 ** 2;
+
+export function encode(
+  val: unknown,
+  dict: unknown[] = [],
+  tags: Tags = defaultTags
+): string {
   const seenPrimitives = new Map<number | string, [number, number]>();
   const seenObjects = new Map<unknown[] | object, [number, number]>();
   const knownPrimitives = new Map<number | string, number>();
@@ -34,7 +77,7 @@ export function encode(val: unknown, dict: unknown[] = []): string {
     offset += len;
   }
 
-  function header(len: number, type: string): void {
+  function header(len: number, type: string | number): void {
     let str = "";
     while (len > 0) {
       str = chars[len % chars.length] + str;
@@ -43,13 +86,26 @@ export function encode(val: unknown, dict: unknown[] = []): string {
     append(str + type);
   }
 
-  function encodeString(str: string): void {
-    // Encode small hexadecimal looking strings as a number to save space
-    if (str.length <= 13 && /^[1-9a-f][0-9a-f]*$/.test(str)) {
-      return header(parseInt(str, 16), "#");
+  function encodeStringInner(str: string): void {
+    // Encode small decimal looking strings as a number to save space
+    if (tags.decstring && str.length <= 15 && /^[1-9][0-9]*$/.test(str)) {
+      return header(parseInt(str, 10), tags.decstring);
     }
+    // Encode small hexadecimal looking strings as a number to save space
+    if (tags.hexstring && str.length <= 13 && /^[1-9a-f][0-9a-f]*$/.test(str)) {
+      return header(parseInt(str, 16), tags.hexstring);
+    }
+    if (tags.string) {
+      const start = offset;
+      append(str);
+      return header(offset - start, tags.string);
+    }
+    throw new TypeError("No string tags provided");
+  }
+
+  function encodeString(str: string): void {
     // Break up large strings so parts can be reused
-    if (str.length > 13) {
+    if (tags.splitstring && str.length > 13) {
       const parts = str.match(
         /(?:[^a-zA-Z0-9_ .-]*[a-zA-Z0-9_ .-]+|[^a-zA-Z0-9_ .-]+)/g
       )!;
@@ -59,77 +115,98 @@ export function encode(val: unknown, dict: unknown[] = []): string {
       if (parts && parts.length > 1 && parts.join("").length === str.length) {
         const start = offset;
         for (let i = 0, l = parts.length; i < l; i++) {
-          encodeUnknown(parts[i]);
+          checkPrimitive<string>(encodeStringInner, parts[i]);
         }
-        return header(offset - start, "/");
+        return header(offset - start, tags.splitstring);
       }
     }
-    // Otherwise encode as normal strings
-    const start = offset;
-    append(str);
-    header(offset - start, "$");
+    return encodeStringInner(str);
   }
 
   function encodeNumber(num: number): void {
     if (isNearlyInteger(num)) {
       // Encode integers as numbers
-      if (num >= 0) {
-        header(num, "+");
-      } else {
-        header(-1 - num, "~");
+      if (tags.posint && num >= 0) {
+        return header(num, tags.posint);
       }
-    } else if (num > 0 && num < 1e8 && isNearlyInteger(num * 100)) {
+      if (tags.negint && num < 0) {
+        return header(-1 - num, tags.negint);
+      }
+    }
+
+    if (num > 0 && num < 1e7) {
       // Fractions that are percentages encode as percentages
-      header(Math.round(num * 100), "%");
-    } else if (num > 0 && num < 1e7 && isNearlyInteger(num * 360)) {
+      if (tags.percent && isNearlyInteger(num * 100)) {
+        return header(Math.round(num * 100), tags.percent);
+      }
+
       // Fractions that are factors of 360 encode as degrees
-      header(Math.round(num * 360), "@");
-    } else {
-      // Encode as decimal string for everything else
+      if (tags.degree && isNearlyInteger(num * 360)) {
+        return header(Math.round(num * 360), tags.degree);
+      }
+    }
+
+    // Encode as decimal string for everything else
+    if (tags.float) {
       const start = offset;
       append((Math.round(num * 1e10) / 1e10).toString());
-      header(offset - start, ".");
+      return header(offset - start, tags.float);
     }
+
+    throw new TypeError("No number/float tags provided for: " + num);
   }
 
   function encodeArray(arr: unknown[]): void {
-    const start = offset;
-    for (let i = arr.length - 1; i >= 0; i--) {
-      encodeUnknown(arr[i]);
+    if (tags.list) {
+      const start = offset;
+      for (let i = arr.length - 1; i >= 0; i--) {
+        encodeUnknown(arr[i]);
+      }
+      return header(offset - start, tags.list);
     }
-    header(offset - start, "[");
+
+    throw new TypeError("Missing list tag");
   }
 
   function encodeObject(obj: object): void {
-    const start = offset;
-    const entries = Object.entries(obj);
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const [key, value] = entries[i];
-      encodeUnknown(value);
-      encodeUnknown(key);
+    if (tags.map) {
+      const start = offset;
+      const entries = Object.entries(obj);
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const [key, value] = entries[i];
+        encodeUnknown(value);
+        encodeUnknown(key);
+      }
+      return header(offset - start, tags.map);
     }
-    header(offset - start, "{");
+
+    throw new TypeError("Missing map tag");
   }
 
   function checkPrimitive<T extends string | number>(
     encodeVal: (v: T) => void,
     val: T
   ): void {
-    if (knownPrimitives.has(val)) {
-      return header(knownPrimitives.get(val)!, "&");
+    if (tags.ref && knownPrimitives.has(val)) {
+      return header(knownPrimitives.get(val)!, tags.ref);
     }
 
-    if (seenPrimitives.has(val)) {
-      const [seenOffset, seenLen] = seenPrimitives.get(val)!;
-      const dist = offset - seenOffset;
-      if (sizeNeeded(dist) * 2 + 1 < seenLen) {
-        return header(dist, "*");
+    if (tags.ptr) {
+      const seen = seenPrimitives.get(val)!;
+      if (seen) {
+        const [seenOffset, seenLen] = seen;
+        const dist = offset - seenOffset;
+        if (dist >= pointerLimit) {
+          seenPrimitives.delete(val);
+        } else if (sizeNeeded(dist) + 1 < seenLen) {
+          return header(dist, tags.ptr);
+        }
       }
     }
 
     const start = offset;
     encodeVal(val);
-    if (offset - start > 3) {
+    if (tags.ptr && offset - start > 3) {
       seenPrimitives.set(val, [offset, offset - start]);
     }
   }
@@ -138,34 +215,46 @@ export function encode(val: unknown, dict: unknown[] = []): string {
     encodeVal: (v: T) => void,
     val: T
   ): void {
-    for (const known of knownObjects.keys()) {
-      if (sameShape(known, val)) {
-        return header(knownObjects.get(known)!, "&");
+    if (tags.ref) {
+      for (const known of knownObjects.keys()) {
+        if (sameShape(known, val)) {
+          return header(knownObjects.get(known)!, tags.ref);
+        }
       }
     }
-    for (const seen of seenObjects.keys()) {
-      if (sameShape(seen, val)) {
-        const [seenOffset, seenLen] = seenObjects.get(seen)!;
+    if (tags.ptr) {
+      for (const [seen, [seenOffset, seenLen]] of seenObjects.entries()) {
         const dist = offset - seenOffset;
-        if (sizeNeeded(dist) + 1 < seenLen) {
-          return header(dist, "*");
+        if (dist >= pointerLimit) {
+          seenObjects.delete(seen);
+        } else if (sizeNeeded(dist) + 1 < seenLen && sameShape(seen, val)) {
+          return header(dist, tags.ptr);
         }
       }
     }
     const start = offset;
     encodeVal(val);
-    seenObjects.set(val, [offset, offset - start]);
+    if (tags.ptr) {
+      if (Array.isArray(val)) {
+        arrays++;
+      } else {
+        objects++;
+      }
+      seenObjects.set(val, [offset, offset - start]);
+    }
   }
 
   function encodeUnknown(val: unknown): void {
-    if (val === true) {
-      return header(0, "!");
-    }
-    if (val === false) {
-      return header(1, "!");
-    }
-    if (val === null) {
-      return header(2, "!");
+    if (tags.simple) {
+      if (val === true) {
+        return header(0, tags.simple);
+      }
+      if (val === false) {
+        return header(1, tags.simple);
+      }
+      if (val === null) {
+        return header(2, tags.simple);
+      }
     }
     if (typeof val === "string") {
       checkPrimitive<string>(encodeString, val);
