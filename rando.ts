@@ -32,6 +32,7 @@ A decoder that doesn't need/want the index can simply skip the index and iterate
 x[x:x:iiiipppp
 */
 
+import { sha } from "bun";
 import { encode as b64Encode } from "./b64.ts";
 
 function zigzagEncode(num: bigint): bigint {
@@ -98,6 +99,7 @@ function findCommonSubstrings(rootVal: unknown): string[] | void {
     stringCounts.set(str, (stringCounts.get(str) || 0) + 1);
   }
   const stack: unknown[] = [rootVal];
+  const strings: string[] = [];
   while (stack.length) {
     const value = stack.pop();
     if (Array.isArray(value)) {
@@ -110,44 +112,120 @@ function findCommonSubstrings(rootVal: unknown): string[] | void {
         stack.push(v);
       }
     } else if (typeof value === "string") {
-      const substrings = new Set<string>();
+      strings.push(value);
+      const substrings = new Map<string, number>();
       // Use various patterns to collect likely good substrings
-      for (const match of value.matchAll(/[0-9a-zA-Z_-]{4,}/g)) {
-        substrings.add(match[0]);
+      const patterns = [
+        // /[0-9a-zA-Z_-]{4,}/g,
+        // /[0-9a-zA-Z]{4`,}[_ /.-]*/g,
+        // /[0-9a-zA-Z]{4,}/g,
+        // /[0-9a-zA-Z]{3,} /g,
+        // /[_ /.-]*[0-9a-zA-Z]{4,}/g,
+        // /[A-Z]?[a-z0-9]{4,}/g,
+      ];
+      for (const pattern of patterns) {
+        const counts = new Map<string, number>();
+        for (const match of value.matchAll(pattern)) {
+          const m = match[0];
+          counts.set(m, (counts.get(m) || 0) + 1);
+        }
+        for (const [key, value] of counts) {
+          substrings.set(key, Math.max(substrings.get(key) || 0, value));
+        }
       }
-      for (const match of value.matchAll(/[0-9a-zA-Z]{4`,}[_ /.-]*/g)) {
-        substrings.add(match[0]);
-      }
-      for (const match of value.matchAll(/[0-9a-zA-Z]{4,}/g)) {
-        substrings.add(match[0]);
-      }
-      for (const match of value.matchAll(/[_ /.-]*[0-9a-zA-Z]{4,}/g)) {
-        substrings.add(match[0]);
-      }
-      for (const match of value.matchAll(/[A-Z]?[a-z0-9]{4,}/g)) {
-        substrings.add(match[0]);
-      }
-      // Add the unique substrings to the counts
-      for (const substring of substrings) {
-        addString(substring);
+      for (const [key, value] of substrings) {
+        stringCounts.set(key, (stringCounts.get(key) || 0) + value);
       }
     }
   }
+
+  const megaString = strings.sort().join("\0");
+  // Search for substrings in the mega string
+  let prev: string | undefined;
+  let prevCount = 0;
+  for (let i = 0, l = megaString.length; i < l; i++) {
+    for (let j = 0; j < l; j++) {
+      let o = 0;
+      // if (i > 0 && j > 0 && megaString[i - 1] === megaString[j - 1]) continue;
+      while (
+        i + o < l &&
+        j + o < l && // Stay in bounds
+        o < Math.abs(i - j) && // We don't want overlapping strings
+        megaString[i + o] === megaString[j + o] &&
+        megaString[i + o] !== "\0" // null types are separators in the mega string
+      ) {
+        o++;
+      }
+      if (o > 1) {
+        addString(megaString.slice(i, i + o));
+      }
+    }
+  }
+
   // Filter out entries with size 1
   for (const [key, value] of stringCounts) {
     if (value === 1) stringCounts.delete(key);
   }
+
+  const toPrune = new Set<string>();
+  const sortedStrings = [...stringCounts.keys()]
+    // Sort strings by frequency and then length
+    // .sort((a, b) => {
+    //   const diff = stringCounts.get(b)! - stringCounts.get(a)!;
+    //   if (diff !== 0) return diff;
+    //   return b.length - a.length;
+    // })
+    .filter((s, i, o) => {
+      const count = stringCounts.get(s)!;
+      // Prune non-repeated strings
+      if (count <= 1) return false;
+      // Prune short strings
+      if (s.length < 3) return false;
+      // Prune substrings of previous string with same count
+      const sub = s.substring(1);
+      const nextCount = stringCounts.get(sub);
+      if (nextCount && nextCount === count) {
+        toPrune.add(sub);
+      }
+      if (toPrune.has(s)) return false;
+      if (i > 0) {
+        const prev = o[i - 1];
+        // Prune rotations of previous string with same count
+        if (
+          prev.length === s.length &&
+          prevCount === count &&
+          prev.substring(1) === s.substring(0, s.length - 1)
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    })
+    // Then sort by length (longest first)
+    .sort((a, b) => b.length - a.length);
+
   // Return sorted by longest first
   if (stringCounts.size > 1) {
-    return [...stringCounts.keys()].sort((a, b) => b.length - a.length);
+    console.log(
+      Object.fromEntries(sortedStrings.map((s) => [s, stringCounts.get(s)]))
+    );
+    return sortedStrings;
   }
 }
 
-export function encode(rootValue: unknown): string {
+export function encode(rootValue: unknown, shared?: unknown[]): string {
   // Current output parts (in reverse order)
   const parts: string[] = [];
   let size = 0;
   const stringOffsets: [string, number, number][] = [];
+
+  const sharedValues = new Map<unknown, number>();
+  if (shared) {
+    for (let i = 0, l = shared.length; i < l; i++) {
+      sharedValues.set(shared[i], i);
+    }
+  }
 
   // Current queue of things to process
   const stack: unknown[] = [rootValue];
@@ -202,6 +280,11 @@ export function encode(rootValue: unknown): string {
 
   while (stack.length) {
     const value = stack.pop();
+    const sharedValue = sharedValues.get(value);
+    if (sharedValue != null) {
+      push(b64Encode(sharedValue) + "&");
+      continue;
+    }
     if (typeof value === "function") {
       value();
     } else if (Array.isArray(value)) {
