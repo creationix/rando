@@ -1,55 +1,25 @@
 import { expect, test } from "bun:test";
-import { encode, decode } from "./rando";
-
-function testRoundTrip(inputs: unknown[]) {
-  for (const input of inputs) {
-    const encoded = encode(input);
-    const json = JSON.stringify(input);
-    if (json.length > 38) {
-      console.log(strlen(json), json);
-      console.log();
-      console.log(strlen(encoded), encoded);
-      console.log("\n");
-    } else {
-      console.log(json.padStart(38, " ") + "  " + encoded);
-    }
-    // const decoded = decode(encoded);
-    // expect(decoded).toEqual(input);
-  }
-}
-
-function testRoundTrip2(inputs: [unknown, unknown[]][]) {
-  for (const [input, shared] of inputs) {
-    const encoded = encode(input, shared);
-    const json = JSON.stringify(input);
-    console.log(strlen(json), json);
-    console.log();
-    console.log(JSON.stringify(shared));
-    console.log(strlen(encoded), encoded);
-    // const decoded = decode(encoded, shared);
-    // expect(decoded).toEqual(input);
-  }
-}
-
-// Get length of a string as utf-8 bytes
-function strlen(str: string): number {
-  return new TextEncoder().encode(str).length;
-}
+import { encode, decode, toNumberMaybe } from "./rando";
 
 test("encode/decode integers", () => {
-  const nums = new Set<number>();
+  testRoundTrip([
+    0, 1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13,
+    1e14, 1e15, -1, -10, -100, -1e3, -1e4, -1e5, -1e6, -1e7, -1e8, -1e9, -1e10,
+    -1e11, -1e12, -1e13, -1e14, -1e15,
+  ]);
+  const nums = new Set<bigint | number>();
   for (const base of [2, 8, 10, 16, 64]) {
     for (let power = 0; power < 12; power++) {
-      const num = base ** power;
-      nums.add(num);
-      nums.add(num - 1);
-      nums.add(num + 1);
-      nums.add(-num);
-      nums.add(-num - 1);
-      nums.add(-num + 1);
+      const num = BigInt(base) ** BigInt(power);
+      nums.add(toNumberMaybe(num));
+      nums.add(toNumberMaybe(num - 1n));
+      nums.add(toNumberMaybe(num + 1n));
+      nums.add(toNumberMaybe(-num));
+      nums.add(toNumberMaybe(-num - 1n));
+      nums.add(toNumberMaybe(-num + 1n));
     }
   }
-  testRoundTrip([...nums].sort((a, b) => a - b));
+  testRoundTrip([...nums].sort((a, b) => Number(a) - Number(b)));
 });
 
 test("encode/decode floats", () => {
@@ -226,7 +196,7 @@ test("encode/decode objects", () => {
   ]);
 });
 
-test.only("encode/decode mixed objects", () => {
+test("encode/decode mixed objects", () => {
   testRoundTrip([
     { a: 100, b: "Hello", c: [100, 200, 300] },
     { a: 100, b: { c: 200 }, d: [100, 200, 300] },
@@ -420,4 +390,42 @@ function findRepeats(rootValue: unknown): [unknown, unknown[]] {
     }
   }
   return [rootValue, [...seen.keys()].filter((k) => seen.get(k)! > 1)];
+}
+
+function testRoundTrip(inputs: unknown[]) {
+  for (const input of inputs) {
+    const encoded = encode(input);
+    const json =
+      typeof input === "bigint" ? input.toString() : JSON.stringify(input);
+    if (json.length > 38) {
+      console.log(strlen(json), json);
+      console.log();
+      console.log(strlen(encoded), encoded);
+      console.log("\n");
+    } else {
+      console.log(json.padStart(38, " ") + "  " + encoded);
+    }
+    const decoded = decode(encoded);
+    console.log({ input, decoded });
+    JSON.stringify(decoded);
+    expect(decoded).toEqual(input);
+  }
+}
+
+function testRoundTrip2(inputs: [unknown, unknown[]][]) {
+  for (const [input, shared] of inputs) {
+    const encoded = encode(input, shared);
+    const json = JSON.stringify(input);
+    console.log(strlen(json), json);
+    console.log();
+    console.log(JSON.stringify(shared));
+    console.log(strlen(encoded), encoded);
+    // const decoded = decode(encoded, shared);
+    // expect(decoded).toEqual(input);
+  }
+}
+
+// Get length of a string as utf-8 bytes
+function strlen(str: string): number {
+  return new TextEncoder().encode(str).length;
 }

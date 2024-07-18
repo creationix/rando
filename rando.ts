@@ -33,10 +33,13 @@ x[x:x:iiiipppp
 */
 
 import { sha } from "bun";
-import { encode as b64Encode } from "./b64.ts";
+import { encode as b64Encode, decode as b64Decode } from "./b64.ts";
 
 function zigzagEncode(num: bigint): bigint {
   return num < 0 ? num * -2n - 1n : num * 2n;
+}
+function zigzagDecode(num: bigint): bigint {
+  return num % 2n ? (num + 1n) / -2n : num / 2n;
 }
 
 function encodeBigint(value: bigint): string {
@@ -350,6 +353,132 @@ export function encode(rootValue: unknown, shared?: unknown[]): string {
   return parts.reverse().join("");
 }
 
+export function toNumberMaybe(num: bigint): bigint | number {
+  return num >= -(2n ** 53n) && num <= 2n ** 53n ? Number(num) : num;
+}
+
+const re = /([0-9a-zA-Z_-]*)([^0-9a-zA-Z_-])/g;
+const inlineTags = {
+  "'": true,
+  "*": true,
+  "+": true,
+  "~": true,
+  "%": true,
+  "@": true,
+  "^": true,
+  "!": true,
+  "?": true,
+};
+
 export function decode(encoded: string): unknown {
-  throw new Error("TODO: decoder");
+  let offset = 0;
+  return decodeAny();
+
+  function lazyStub(
+    object: unknown[] | object,
+    index: number | string,
+    savedOffset: number
+  ) {
+    Object.defineProperty(object, index, {
+      get() {
+        const save = offset;
+        offset = savedOffset;
+        const value = decodeAny();
+        offset = save;
+        Object.defineProperty(object, index, {
+          value,
+          enumerable: true,
+          writable: false,
+          configurable: false,
+        });
+        return value;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
+
+  function skipAny() {
+    console.log("skipAny", {
+      encoded,
+      offset,
+      tail: encoded.substring(offset),
+    });
+    // Math base64 characters at offset
+    re.lastIndex = offset;
+    const [all, header, tag] = re.exec(encoded)!;
+    offset += all.length;
+    if (!inlineTags[tag]) offset += Number(b64Decode(header));
+  }
+
+  function decodeAny(): unknown {
+    // Math base64 characters at offset
+    re.lastIndex = offset;
+    const [all, header, tag] = re.exec(encoded)!;
+    offset += all.length;
+    if (tag === "'") return header;
+    const n = b64Decode(header);
+    if (tag === "*") {
+      const save = offset;
+      offset += Number(n);
+      const val = decodeAny();
+      offset = save;
+      return val;
+    }
+    if (tag === "+") return n;
+    if (tag === "~") return toNumberMaybe(-1n - BigInt(n));
+    if (tag === "%") return Number(zigzagDecode(BigInt(n))) / 100;
+    if (tag === "@") return Number(zigzagDecode(BigInt(n))) / 360;
+    if (tag === "^") return true;
+    if (tag === "!") return false;
+    if (tag === "?") return null;
+    const end = offset + Number(n);
+    if (end > encoded.length) {
+      console.log({ offset, header, tag, n, end, encoded });
+      throw new Error(`Invalid length (${end}/${encoded.length})`);
+    }
+    if (tag === "/") {
+      const parts: string[] = [];
+      while (offset < end) {
+        const part = decodeAny() as string;
+        parts.push(part);
+      }
+      if (offset !== end) throw new Error("Invalid string list");
+      return parts.join("");
+    }
+    if (tag === "[") {
+      const arr: unknown[] = [];
+      let length = 0;
+      while (offset < end) {
+        lazyStub(arr, length, offset);
+        console.log({ offset, end });
+        skipAny();
+        length++;
+      }
+      if (offset !== end) throw new Error("Invalid list");
+      return arr;
+    }
+    if (tag === "{") {
+      const obj: Record<string, unknown> = {};
+      while (offset < end) {
+        const key = decodeAny() as string;
+        lazyStub(obj, key, offset);
+        skipAny();
+      }
+      if (offset !== end) throw new Error("Invalid map");
+      return obj;
+    }
+    const body = encoded.substring(offset, end);
+    offset = end;
+    if (tag === "$") return body;
+    if (tag === ".") {
+      if (body === "-inf") return -Infinity;
+      if (body === "inf") return Infinity;
+      if (body === "nan") return NaN;
+      return Number(body);
+    }
+    console.log({ header, tag, n, encoded, offset, body });
+    // if (tag === ".")
+    throw new Error("TODO: decoder");
+  }
 }
