@@ -17,7 +17,7 @@ export function decode(str: string): number | bigint {
     num = 64n * num + BigInt(chars.indexOf(str[i]));
   }
   // convert back to number if within 53 bit mantissa range
-  if (num <= 2n ** 53n) {
+  if (num >= -(2n ** 53n) && num <= 2n ** 53n) {
     return Number(num);
   }
   return num;
