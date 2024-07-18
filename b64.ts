@@ -1,4 +1,4 @@
-const chars =
+export const chars =
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 
 export function encode(num: number | bigint): string {
