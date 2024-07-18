@@ -7,42 +7,35 @@ Rando is a new serialization format optimized for fast random access of unstruct
 The basic types in JSON are supported at the core with other additions as needed for various use cases.
 
 ```
-+ 0000 positive integer (val)              integers 0 to 11
-~ 0001 negative integer (-1 - val)         integers -1 to -12
-* 0010 pointer (byte offset into self)
-& 0011 reference (0 based index into external dictionary)
-! 0100 simple (0 - false, 1 = true, 2 - nil)
-/ 0101 frac-30 (val * 30)                  fractions like 1/3, 9/20
-^ 0110 pow2 (divide next value by power of 2)
-? 0111 tag (tag next value with type)
+Integer Encodings
++ zigzag integer
 
-containers
+Pointer and Reference Encodings
+* pointer (relative byte offset into self)
+& reference (0 based index into external dictionary)
 
-$ 1000 utf-8 string
-. 1001 number as string
-# 1010 bytes
-  1011
-] 1100 list
-} 1101 map
-> 1110 tag (wrap value with tag)
-: 1111 index (wrap list or map with quick access index)
+Primitive Type Encodings
+? nil
+! true
+~ false
+
+Floating Point Encodings
+@ frac-360 (val * 360)
+% percent (val * 100)
+. number as string
+
+String Encodings
+' b64-string (use b64 encoding as-is)
+$ utf-8 string
+/ string list (list of string parts)
+# binary bytes encoded as base64 payload
+
+Containers
+[ list of values
+{ map of key/value pairs
+: index (can be first entry in list or map)
+
+For example, a list with index has 3 b64 headers for total-byte-length, index-count, and index-pointer-width.
+A decoder that doesn't need/want the index can simply skip the index and iterate the payload.
+x[x:x:iiiipppp
 ```
-
-## Supported Header Formats
-
-Headers can be encoded as either binary or textual.
-
-The binary format has a 4-bit type field and a variable length field for the associated integer value.
-
-```
-                                    yyyy xxxx
-                           yyyyyyyy 1100 xxxx
-                  yyyyyyyy yyyyyyyy 1101 xxxx
-yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy 1110 xxxx
-yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy 1111 xxxx
-yyyyyyyy yyyyyyyy yyyyyyyy yyyyyyyy
-```
-
-Here `xxxx` is the type. For example `0000` is `int`, `1100` is `list`.
-
-`yyyy` is the inline integer value when it's less than 12. Otherwise a larger representation is needed. All integers are unsigned and multi-byte variants use native machine little-endian for faster processing on most modern machines.
