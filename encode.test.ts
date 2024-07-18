@@ -9,6 +9,7 @@ function testRoundTrip(inputs: unknown[]) {
       console.log(strlen(json), json);
       console.log();
       console.log(strlen(encoded), encoded);
+      console.log("\n");
     } else {
       console.log(json.padStart(38, " ") + "  " + encoded);
     }
@@ -225,7 +226,7 @@ test("encode/decode objects", () => {
   ]);
 });
 
-test("encode/decode mixed objects", () => {
+test.only("encode/decode mixed objects", () => {
   testRoundTrip([
     { a: 100, b: "Hello", c: [100, 200, 300] },
     { a: 100, b: { c: 200 }, d: [100, 200, 300] },
@@ -420,58 +421,3 @@ function findRepeats(rootValue: unknown): [unknown, unknown[]] {
   }
   return [rootValue, [...seen.keys()].filter((k) => seen.get(k)! > 1)];
 }
-
-// for (let i = 0; i < 10; i++) {
-//   console.log(i, encode([2 ** i, 10 ** i, 64 ** i, 64 ** i - 1]));
-//   console.log(i, encode([i / 360, i / 100, -(i ** 5)]));
-//   console.log(i, encode([i, -i]));
-// }
-// const bigdoc = {
-//   id: "0001",
-//   type: "donut",
-//   name: "Cake",
-//   ppu: 0.55,
-//   batters: {
-//     batter: [
-//       { id: "1001", type: "Regular" },
-//       { id: "1002", type: "Chocolate" },
-//       { id: "1003", type: "Blueberry" },
-//       { id: "1004", type: "Devil's Food" },
-//     ],
-//   },
-//   topping: [
-//     { id: "5001", type: "None" },
-//     { id: "5002", type: "Glazed" },
-//     { id: "5005", type: "Sugar" },
-//     { id: "5007", type: "Powdered Sugar" },
-//     { id: "5006", type: "Chocolate with Sprinkles" },
-//     { id: "5003", type: "Chocolate" },
-//     { id: "5004", type: "Maple" },
-//   ],
-// };
-// console.log(encode(bigdoc));
-// // console.log(encode(bigdoc, ["id", "type"]));
-
-// // console.log(encode([Math.PI, Math.E]));
-
-// // console.log(encode([3 + 123 / 360, 2 + 1 / 360, 15 + 90 / 360]));
-// // console.log(encode("😊"));
-
-// // const dict = [
-// //   "content-length",
-// //   "content-type",
-// //   ["content-type", "application/json"],
-// //   ["content-type", "text/plain"],
-// // ];
-
-// // const doc = {
-// //   status: 200,
-// //   headers: [
-// //     ["content-length", 120],
-// //     ["content-type", "text/plain"],
-// //     ["content-type", "application/json"],
-// //   ],
-// // };
-
-// // console.log(encode(doc));
-// // console.log(encode(doc, dict));
