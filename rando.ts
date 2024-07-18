@@ -169,47 +169,47 @@ function findCommonSubstrings(rootVal: unknown): string[] | void {
 
   const toPrune = new Set<string>();
   const sortedStrings = [...stringCounts.keys()]
-    // Sort strings by frequency and then length
-    // .sort((a, b) => {
-    //   const diff = stringCounts.get(b)! - stringCounts.get(a)!;
-    //   if (diff !== 0) return diff;
-    //   return b.length - a.length;
-    // })
     .filter((s, i, o) => {
       const count = stringCounts.get(s)!;
       // Prune non-repeated strings
       if (count <= 1) return false;
       // Prune short strings
-      if (s.length < 3) return false;
+      if (s.length < 2) return false;
       // Prune substrings of previous string with same count
       const sub = s.substring(1);
-      const nextCount = stringCounts.get(sub);
+      let nextCount = stringCounts.get(sub);
       if (nextCount && nextCount === count) {
         toPrune.add(sub);
       }
-      if (toPrune.has(s)) return false;
       if (i > 0) {
-        const prev = o[i - 1];
         // Prune rotations of previous string with same count
-        if (
-          prev.length === s.length &&
-          prevCount === count &&
-          prev.substring(1) === s.substring(0, s.length - 1)
-        ) {
-          return false;
+        for (let h = i + 1; h < o.length; h++) {
+          const next = o[h];
+          nextCount = stringCounts.get(next);
+          if (
+            next.length === s.length &&
+            nextCount === count &&
+            (next.substring(1) === s.substring(0, s.length - 1) ||
+              s.substring(1) === next.substring(0, s.length - 1))
+          ) {
+            toPrune.add(next);
+          }
         }
       }
-
-      return true;
+      return !toPrune.has(s);
     })
-    // Then sort by length (longest first)
-    .sort((a, b) => b.length - a.length);
+    // Sort by length (longest first)
+    // and then by frequency
+    // and finally by name
+    .sort((a, b) => {
+      let delta = b.length - a.length;
+      if (delta !== 0) return delta;
+      delta = stringCounts.get(b)! - stringCounts.get(a)!;
+      if (delta !== 0) return delta;
+      return a.localeCompare(b, "ascii");
+    });
 
-  // Return sorted by longest first
   if (stringCounts.size > 1) {
-    console.log(
-      Object.fromEntries(sortedStrings.map((s) => [s, stringCounts.get(s)]))
-    );
     return sortedStrings;
   }
 }
@@ -233,7 +233,7 @@ export function encode(rootValue: unknown, shared?: unknown[]): string {
   const substrings = findCommonSubstrings(rootValue);
   let substringFinder: RegExp | undefined;
   if (substrings && substrings.length > 2) {
-    console.log(substrings);
+    // console.log(substrings);
     // make a regexp that matches any string containing any of the substrings
     // Make sure to escape the strings for regex
     substringFinder = new RegExp(
