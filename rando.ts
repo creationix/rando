@@ -408,7 +408,15 @@ export function decode(encoded: string): unknown {
     re.lastIndex = offset;
     const [all, header, tag] = re.exec(encoded)!;
     offset += all.length;
-    if (!inlineTags[tag]) offset += Number(b64Decode(header));
+    if (!inlineTags[tag]) {
+      const n = Number(b64Decode(header));
+      const start = offset;
+      offset += n;
+      if (offset > encoded.length) {
+        console.log({ offset, header, tag, start, n, encoded });
+        throw new Error(`Invalid length (${offset}/${encoded.length})`);
+      }
+    }
   }
 
   function decodeAny(): unknown {
