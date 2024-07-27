@@ -1,6 +1,8 @@
 # Rando - An Exciting Serialization Format
 
-![Rando Logo](img/logo-light.svg)
+| Light Mode                                  | Dark Mode                                 |
+| ------------------------------------------- | ----------------------------------------- |
+| ![Rando Logo for Light](img/logo-light.svg) | ![Rando Logo for Dark](img/logo-dark.svg) |
 
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
