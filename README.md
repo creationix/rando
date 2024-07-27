@@ -6,6 +6,14 @@
 
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
+Use Rando anywhere you might use JSON if the following are true:
+
+- You don't want to always parse everything when reading documents
+- You don't like encoding repeat values (like object keys) over and over.
+- You don't need a human-readable or human-editable format.
+- You might be able to share a list of known values between encoder and decoder.
+- You still need to be able to serilize to text, maybe embed inside JSON as a string.
+
 ## Basic Usage
 
 First add rando as a dependency to your project:
