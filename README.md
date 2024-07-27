@@ -1,6 +1,6 @@
 # Rando - An Exciting Serialization Format
 
-![Bun Tests](https://github.com/creationix/rando/actions/workflows/test.yaml/badge.svg)
+[![Bun Tests](https://github.com/creationix/rando/actions/workflows/test.yaml/badge.svg?event=push)](https://github.com/creationix/rando/actions/workflows/test.yaml)
 
 | Light Mode                                  | Dark Mode                                 |
 | ------------------------------------------- | ----------------------------------------- |
