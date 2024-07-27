@@ -1,7 +1,7 @@
-name: rando-test
+name: Run Rando Bun Tests
+on: [push]
 jobs:
-  my-job:
-    name: bun-test
+  run-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
