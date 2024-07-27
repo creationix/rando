@@ -1,5 +1,7 @@
 # Rando - An Exciting Serialization Format
 
+![Rando Logo](img/logo-light.svg)
+
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
 ## Basic Usage
