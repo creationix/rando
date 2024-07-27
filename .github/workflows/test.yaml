@@ -1,4 +1,4 @@
-name: Run Rando Bun Tests
+name: Rando Unit Tests
 on: [push]
 jobs:
   run-tests:
