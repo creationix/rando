@@ -118,14 +118,7 @@ function findCommonSubstrings(rootVal: unknown): string[] | void {
       strings.push(value);
       const substrings = new Map<string, number>();
       // Use various patterns to collect likely good substrings
-      const patterns = [
-        // /[0-9a-zA-Z_-]{4,}/g,
-        // /[0-9a-zA-Z]{4`,}[_ /.-]*/g,
-        // /[0-9a-zA-Z]{4,}/g,
-        // /[0-9a-zA-Z]{3,} /g,
-        // /[_ /.-]*[0-9a-zA-Z]{4,}/g,
-        // /[A-Z]?[a-z0-9]{4,}/g,
-      ];
+      const patterns = [/[0-9a-zA-Z_-]{4,}/g];
       for (const pattern of patterns) {
         const counts = new Map<string, number>();
         for (const match of value.matchAll(pattern)) {
@@ -142,28 +135,28 @@ function findCommonSubstrings(rootVal: unknown): string[] | void {
     }
   }
 
-  const megaString = strings.sort().join("\0");
-  // Search for substrings in the mega string
-  let prev: string | undefined;
-  let prevCount = 0;
-  for (let i = 0, l = megaString.length; i < l; i++) {
-    for (let j = 0; j < l; j++) {
-      let o = 0;
-      // if (i > 0 && j > 0 && megaString[i - 1] === megaString[j - 1]) continue;
-      while (
-        i + o < l &&
-        j + o < l && // Stay in bounds
-        o < Math.abs(i - j) && // We don't want overlapping strings
-        megaString[i + o] === megaString[j + o] &&
-        megaString[i + o] !== "\0" // null types are separators in the mega string
-      ) {
-        o++;
-      }
-      if (o > 1) {
-        addString(megaString.slice(i, i + o));
-      }
-    }
-  }
+  // const megaString = strings.sort().join("\0");
+  // // Search for substrings in the mega string
+  // let prev: string | undefined;
+  // let prevCount = 0;
+  // for (let i = 0, l = megaString.length; i < l; i++) {
+  //   for (let j = 0; j < l; j++) {
+  //     let o = 0;
+  //     // if (i > 0 && j > 0 && megaString[i - 1] === megaString[j - 1]) continue;
+  //     while (
+  //       i + o < l &&
+  //       j + o < l && // Stay in bounds
+  //       o < Math.abs(i - j) && // We don't want overlapping strings
+  //       megaString[i + o] === megaString[j + o] &&
+  //       megaString[i + o] !== "\0" // null types are separators in the mega string
+  //     ) {
+  //       o++;
+  //     }
+  //     if (o > 1) {
+  //       addString(megaString.slice(i, i + o));
+  //     }
+  //   }
+  // }
 
   // Filter out entries with size 1
   for (const [key, value] of stringCounts) {
