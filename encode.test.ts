@@ -75,6 +75,16 @@ test("encode/decode b64 strings", () => {
   ]);
 });
 
+test("encode/decode unicode strings", () => {
+  testRoundTrip([
+    "¡Hola, Mundo!",
+    "안녕하세요 세계!",
+    "مرحبا بالعالم!",
+    "👋🌍",
+    "𐐐𐐯𐑊𐐬 𐐎𐐲𐑉𐑊𐐼",
+  ]);
+});
+
 test("encode/decode arrays", () => {
   testRoundTrip([
     [],
@@ -114,6 +124,32 @@ test("encode/decode mixed objects", () => {
       { color: "green", fruits: ["apple"] },
       { color: "yellow", fruits: ["apple", "banana"] },
     ],
+  ]);
+});
+
+test("encode/decode unicode strings with pointers", () => {
+  testRoundTrip([
+    {
+      apple: ["🍎", "🍏"],
+      pear: "🍐",
+      orange: "🍊",
+      citrus: ["🍋", "🍊"],
+      fruit: ["🍎", "🍏", "🍐", "🍊", "🍋", "🍌"],
+    },
+    {
+      "🍎": "apple",
+      "🍏": "apple",
+      "🍐": "pear",
+      "🍊": "orange",
+      "🍋": "lemon",
+      "🍌": "banana",
+    },
+    {
+      𐑌𐐩𐑋: "𐐙𐑉𐐯𐐼",
+      𐐩𐐾: 42,
+      𐐻𐐫𐑊: true,
+      𐑁𐐨𐑉𐑆: [null, false],
+    },
   ]);
 });
 
