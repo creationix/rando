@@ -1,16 +1,16 @@
-const POSINT = 0
-const NEGINT = 1
-const PERCENT = 2
-const DEGREE = 3
-const POINTER = 4
-const REFERENCE = 5
-const SIMPLE = 6
+const SIMPLE = 0
+const POSINT = 1
+const NEGINT = 2
+const PERCENT = 3
+const DEGREE = 4
+const FLOAT = 5
+const POINTER = 6
+const REFERENCE = 7
 
 const STRING = 8
 const BYTES = 9
-const FLOAT = 10
-const LIST = 11
-const MAP = 12
+const LIST = 10
+const MAP = 11
 
 // Like rando, but binary using nibs headers
 const FALSE = nibsEncode(SIMPLE, 0)
@@ -134,9 +134,6 @@ export function encode(
   }
 
   function encodeString(value: string): number {
-    if (/^[1-9a-zA-Z_-][0-9a-zA-Z_-]*$/.test(value)) {
-      return pushStr(value + "'");
-    }
     return pushContainer(pushStr(value), STRING);
   }
 
@@ -157,7 +154,11 @@ export function encode(
         return pushNibs(degree, DEGREE);
       }
     }
-    return pushContainer(pushStr(value.toString()), FLOAT);
+    const buf = new Uint8Array(5);
+    const view = new DataView(buf.buffer);
+    view.setFloat32(1, value, true);
+    buf[0] = FLOAT << 4 | 14;
+    return push(buf);
   }
 
   function encodeObject(value: object): number {
@@ -245,4 +246,8 @@ function sameShape(a: unknown, b: unknown): boolean {
     return true;
   }
   return false;
+}
+
+export function decode(encoded: Uint8Array, knownValues: unknown[] = []): any {
+  throw new Error("TODO: decode")
 }
