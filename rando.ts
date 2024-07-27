@@ -1,388 +1,326 @@
-/*
-+ positive integer (n)
-~ negative integer (-1 - n)
+const NULL = new TextEncoder().encode("?");
+const TRUE = new TextEncoder().encode("^");
+const FALSE = new TextEncoder().encode("!");
 
-Pointer and Reference Encodings
-* pointer (relative byte offset into self)
-& reference (0 based index into external dictionary)
+/**
+ * Given a value and optional list of known values shared between encoder and decoder,
+ * return a string representation of the value.
+ */
+export function encode(
+  rootValue: unknown,
+  knownValues: unknown[] = []
+): string {
+  // Array of byte arrays to be combined into a single byte array
+  const parts: Uint8Array[] = [];
 
-Primitive Type Encodings
-? nil
-^ true
-! false
-
-Floating Point Encodings
-@ frac-360 (val * 360)
-% percent (val * 100)
-. number as string
-
-String Encodings
-' b64-string (use b64 encoding as-is)
-$ utf-8 string
-/ string list (list of string parts)
-# binary bytes encoded as base64 payload
-
-Containers
-[ list of values
-{ map of key/value pairs
-: index (can be first entry in list or map)
-
-For example, a list with index has 3 b64 headers for total-byte-length, index-count, and index-pointer-width.
-A decoder that doesn't need/want the index can simply skip the index and iterate the payload.
-x[x:x:iiiipppp
-*/
-
-import { sha } from "bun";
-import { encode as b64Encode, decode as b64Decode } from "./b64.ts";
-
-function zigzagEncode(num: bigint): bigint {
-  return num < 0 ? num * -2n - 1n : num * 2n;
-}
-function zigzagDecode(num: bigint): bigint {
-  return num % 2n ? (num + 1n) / -2n : num / 2n;
-}
-
-function encodeBigint(value: bigint): string {
-  return value >= 0n ? b64Encode(value) + "+" : b64Encode(-1n - value) + "~";
-}
-
-function encodeNumber(value: number): string {
-  if (Number.isInteger(value)) {
-    return encodeBigint(BigInt(value));
-  }
-  const percent = Math.round(value * 100);
-  if (
-    Math.abs(percent) > 0 &&
-    Math.abs(percent) < 2 ** 51 &&
-    Math.abs(percent - value * 100) < 1e-12
-  ) {
-    return b64Encode(zigzagEncode(BigInt(percent))) + "%";
-  }
-  const degree = Math.round(value * 360);
-  if (
-    Math.abs(degree) > 0 &&
-    Math.abs(degree) < 2 ** 51 &&
-    Math.abs(degree - value * 360) < 1e-12
-  ) {
-    return b64Encode(zigzagEncode(BigInt(degree))) + "@";
-  }
-  const str = Number.isNaN(value)
-    ? "nan"
-    : value === Infinity
-    ? "inf"
-    : value === -Infinity
-    ? "-inf"
-    : String(value);
-  return b64Encode(str.length) + "." + str;
-}
-
-function encodeString(value: string): string {
-  if (/^[0-9a-zA-Z_-]*$/.test(value)) {
-    return value + "'";
-  }
-  return b64Encode(strlen(value)) + "$" + value;
-}
-
-function encodePrimitive(value: unknown): string {
-  if (value == null) return "?";
-  if (typeof value === "number") return encodeNumber(value);
-  if (typeof value === "boolean") return value ? "^" : "!";
-  if (typeof value === "bigint") return encodeBigint(value);
-  throw new TypeError("Not a primitive: " + value);
-}
-
-// Get length of a string as utf-8 bytes
-function strlen(str: string): number {
-  return new TextEncoder().encode(str).length;
-}
-
-function findCommonSubstrings(rootVal: unknown): string[] | void {
-  const stringCounts = new Map<string, number>();
-  function addString(str: string) {
-    stringCounts.set(str, (stringCounts.get(str) || 0) + 1);
-  }
-  const stack: unknown[] = [rootVal];
-  const strings: string[] = [];
-  while (stack.length) {
-    const value = stack.pop();
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        stack.push(entry);
-      }
-    } else if (value && typeof value === "object") {
-      for (const [k, v] of Object.entries(value)) {
-        stack.push(k);
-        stack.push(v);
-      }
-    } else if (typeof value === "string") {
-      strings.push(value);
-      const substrings = new Map<string, number>();
-      // Use various patterns to collect likely good substrings
-      const patterns = [/[0-9a-zA-Z_-]{4,}/g];
-      for (const pattern of patterns) {
-        const counts = new Map<string, number>();
-        for (const match of value.matchAll(pattern)) {
-          const m = match[0];
-          counts.set(m, (counts.get(m) || 0) + 1);
-        }
-        for (const [key, value] of counts) {
-          substrings.set(key, Math.max(substrings.get(key) || 0, value));
-        }
-      }
-      for (const [key, value] of substrings) {
-        stringCounts.set(key, (stringCounts.get(key) || 0) + value);
-      }
-    }
-  }
-
-  // const megaString = strings.sort().join("\0");
-  // // Search for substrings in the mega string
-  // let prev: string | undefined;
-  // let prevCount = 0;
-  // for (let i = 0, l = megaString.length; i < l; i++) {
-  //   for (let j = 0; j < l; j++) {
-  //     let o = 0;
-  //     // if (i > 0 && j > 0 && megaString[i - 1] === megaString[j - 1]) continue;
-  //     while (
-  //       i + o < l &&
-  //       j + o < l && // Stay in bounds
-  //       o < Math.abs(i - j) && // We don't want overlapping strings
-  //       megaString[i + o] === megaString[j + o] &&
-  //       megaString[i + o] !== "\0" // null types are separators in the mega string
-  //     ) {
-  //       o++;
-  //     }
-  //     if (o > 1) {
-  //       addString(megaString.slice(i, i + o));
-  //     }
-  //   }
-  // }
-
-  // Filter out entries with size 1
-  for (const [key, value] of stringCounts) {
-    if (value === 1) stringCounts.delete(key);
-  }
-
-  const toPrune = new Set<string>();
-  const sortedStrings = [...stringCounts.keys()]
-    .filter((s, i, o) => {
-      const count = stringCounts.get(s)!;
-      // Prune non-repeated strings
-      if (count <= 1) return false;
-      // Prune short strings
-      if (s.length < 2) return false;
-      // Prune substrings of previous string with same count
-      const sub = s.substring(1);
-      let nextCount = stringCounts.get(sub);
-      if (nextCount && nextCount === count) {
-        toPrune.add(sub);
-      }
-      if (i > 0) {
-        // Prune rotations of previous string with same count
-        for (let h = i + 1; h < o.length; h++) {
-          const next = o[h];
-          nextCount = stringCounts.get(next);
-          if (
-            next.length === s.length &&
-            nextCount === count &&
-            (next.substring(1) === s.substring(0, s.length - 1) ||
-              s.substring(1) === next.substring(0, s.length - 1))
-          ) {
-            toPrune.add(next);
-          }
-        }
-      }
-      return !toPrune.has(s);
-    })
-    // Sort by length (longest first)
-    // and then by frequency
-    // and finally by name
-    .sort((a, b) => {
-      let delta = b.length - a.length;
-      if (delta !== 0) return delta;
-      delta = stringCounts.get(b)! - stringCounts.get(a)!;
-      if (delta !== 0) return delta;
-      return a.localeCompare(b, "ascii");
-    });
-
-  if (stringCounts.size > 1) {
-    return sortedStrings;
-  }
-}
-
-export function encode(rootValue: unknown, shared?: unknown[]): string {
-  // Current output parts (in reverse order)
-  const parts: string[] = [];
+  // A running total of the bytes in parts
   let size = 0;
-  const stringOffsets: [string, number, number][] = [];
 
-  const sharedValues = new Map<unknown, number>();
-  if (shared) {
-    for (let i = 0, l = shared.length; i < l; i++) {
-      sharedValues.set(shared[i], i);
+  // Values that have been seen before, and the offset and cost of encoding them.
+  const seenPrimitives = new Map<unknown, [number, number]>();
+
+  // Strings and Numbers from `knownValues` and their offset index.
+  const knownPrimitives = new Map<unknown, number>();
+
+  // Objects and Arrays from `knownValues` and their offset index.
+  const knownObjects = new Map<unknown, number>();
+
+  // Create quick lookup maps for known values
+  for (let i = 0, l = knownValues.length; i < l; i++) {
+    const value = knownValues[i];
+    if (typeof value === "string" || typeof value === "number") {
+      knownPrimitives.set(value, i);
+    } else if (value && typeof value === "object") {
+      knownObjects.set(value, i);
+    } else {
+      console.warn("Unsupported known value", value);
     }
   }
-
-  // Current queue of things to process
-  const stack: unknown[] = [rootValue];
-
-  const substrings = findCommonSubstrings(rootValue);
-  let substringFinder: RegExp | undefined;
-  if (substrings && substrings.length > 2) {
-    // console.log(substrings);
-    // make a regexp that matches any string containing any of the substrings
-    // Make sure to escape the strings for regex
-    substringFinder = new RegExp(
-      `(${substrings
-        .map((s) => s.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&"))
-        .join("|")})`
-    );
+  const written = encodeAny(rootValue);
+  if (written !== size) throw new Error("Size mismatch");
+  const buffer = new Uint8Array(size);
+  let offset = 0;
+  for (let i = parts.length - 1; i >= 0; --i) {
+    const part = parts[i];
+    buffer.set(part, offset);
+    offset += part.byteLength;
   }
+  return new TextDecoder().decode(buffer);
 
-  function push(encoded: string): number {
-    parts.push(encoded);
-    const len = strlen(encoded);
+  function push(value: Uint8Array): number {
+    parts.push(value);
+    const len = value.byteLength;
     size += len;
     return len;
   }
 
-  function save() {
-    return {
-      size,
-      partsLength: parts.length,
-      stringsLength: stringOffsets.length,
-    };
+  function pushStr(value: string) {
+    return push(new TextEncoder().encode(value));
   }
 
-  function restore(state: ReturnType<typeof save>) {
-    size = state.size;
-    parts.length = state.partsLength;
-    stringOffsets.length = state.stringsLength;
+  function pushInline(num: number, tag: string) {
+    return pushStr(b64Encode(num) + tag);
   }
 
-  function findString(string: string): [number, number] | undefined {
-    for (let i = stringOffsets.length - 1; i >= 0; i--) {
-      const [s, o, z] = stringOffsets[i];
-      if (s === string) {
-        return [o, z];
-      }
-    }
+  function pushContainer(written: number, tag: string) {
+    return written + pushStr(b64Encode(written) + tag);
   }
 
-  function addString(string: string, len: number) {
-    const offset = size;
-    stringOffsets.push([string, offset, len]);
-  }
-
-  while (stack.length) {
-    const value = stack.pop();
-    const sharedValue = sharedValues.get(value);
-    if (sharedValue != null) {
-      push(b64Encode(sharedValue) + "&");
-      continue;
-    }
-    if (typeof value === "function") {
-      value();
-    } else if (Array.isArray(value)) {
-      const start = size;
-      stack.push(() => {
-        const end = size;
-        push(b64Encode(end - start) + "[");
-      });
-      for (const entry of value) {
-        stack.push(entry);
-      }
-    } else if (value && typeof value === "object") {
-      const start = size;
-      stack.push(() => {
-        const end = size;
-        push(b64Encode(end - start) + "{");
-      });
-      for (const [k, v] of Object.entries(value)) {
-        stack.push(k);
-        stack.push(v);
-      }
-    } else if (typeof value === "string") {
-      const seen = findString(value);
-      if (seen) {
-        const [offset, len] = seen;
-        const pointer = b64Encode(size - offset) + "*";
-        if (strlen(pointer) < len) {
-          push(pointer);
-          continue;
+  function encodeAny(value: unknown): number {
+    // If the value is a known primitive or object, encode it as a pointer
+    let known = knownPrimitives.get(value) ?? knownObjects.get(value);
+    if (known === undefined && value && typeof value === "object") {
+      for (const k of knownObjects.keys()) {
+        if (sameShape(value, k)) {
+          known = knownObjects.get(k)!;
+          break;
         }
       }
-
-      if (substringFinder) {
-        const segments = value.split(substringFinder).filter(Boolean);
-        if (segments.length > 1) {
-          const s = save();
-          addString(value, push(encodeString(value)));
-          const s2 = save();
-          restore(s);
-          const start = size;
-          stack.push(() => {
-            const end = size;
-            const encoded = b64Encode(end - start) + "/";
-            addString(value, push(encoded));
-            const s3 = save();
-            // If the split encoding is not smaller, revert to other timeline
-            if (s3.size >= s2.size) {
-              restore(s2);
-            }
-          });
-          for (const segment of segments) {
-            stack.push(segment);
-          }
-          continue;
-        }
-      }
-      addString(value, push(encodeString(value)));
-    } else {
-      push(encodePrimitive(value));
     }
+    if (typeof known === "number") return pushInline(known, "&");
+
+    // If the value has been seen before and a pointer is
+    // cheaper than encoding it again, encode it as a pointer
+    let seen = seenPrimitives.get(value);
+    if (seen) {
+      const [seenOffset, cost] = seen;
+      const dist = size - seenOffset;
+      const pointerCost = sizeNeeded(dist) + 1;
+      if (pointerCost < cost) return pushInline(dist, "*");
+    }
+
+    // Encode the value and record how expensive it was to write
+    const written = encodeAnyInner(value);
+
+    // Record in the seen values map if it's a string or number
+    if (typeof value === "string" || typeof value === "number") {
+      seenPrimitives.set(value, [size, written]);
+    }
+
+    return written;
   }
 
-  return parts.reverse().join("");
+  function encodeAnyInner(value: unknown): number {
+    if (value == null) return push(NULL);
+    if (value === true) return push(TRUE);
+    if (value === false) return push(FALSE);
+    if (Array.isArray(value)) return encodeArray(value);
+    if (typeof value === "object") return encodeObject(value);
+    if (typeof value === "string") return encodeString(value);
+    if (typeof value === "number") return encodeNumber(value);
+    console.warn("Unsupported value", value);
+    return push(NULL);
+  }
+
+  function encodeString(value: string): number {
+    if (/^[1-9a-zA-Z_-][0-9a-zA-Z_-]*$/.test(value)) {
+      return pushStr(value + "'");
+    }
+    return pushContainer(pushStr(value), "$");
+  }
+
+  function encodeNumber(value: number): number {
+    if (Number.isInteger(value)) {
+      if (value >= 0) {
+        return pushInline(value, "+");
+      }
+      return pushInline(-1 - value, "~");
+    }
+    if (value > 0 && value < 2.3e13) {
+      const percent = Math.round(value * 100);
+      if (Math.abs(percent - value * 100) < 1e-15) {
+        return pushInline(percent, "%");
+      }
+      const degree = Math.round(value * 360);
+      if (Math.abs(degree - value * 360) < 1e-15) {
+        return pushInline(degree, "@");
+      }
+    }
+    return pushContainer(pushStr(value.toString()), ".");
+  }
+
+  function encodeObject(value: object): number {
+    const start = size;
+    const entries = Object.entries(value);
+    let written = 0;
+    for (let i = entries.length - 1; i >= 0; --i) {
+      const [key, value] = entries[i];
+      const valueSize = encodeAny(value);
+      const keySize = encodeAny(key);
+      written += valueSize + keySize;
+    }
+    const end = size;
+    if (written !== end - start) throw new Error("Size mismatch");
+    return pushContainer(written, "{");
+  }
+
+  function encodeArray(value: unknown[]): number {
+    const start = size;
+    let written = 0;
+    for (let i = value.length - 1; i >= 0; --i) {
+      const valueSize = encodeAny(value[i]);
+      written += valueSize;
+    }
+    const end = size;
+    if (written !== end - start) throw new Error("Size mismatch");
+    return pushContainer(written, "[");
+  }
 }
 
-export function toNumberMaybe(num: bigint): bigint | number {
-  return num >= -(2n ** 53n) && num <= 2n ** 53n ? Number(num) : num;
-}
-
-const re = /([0-9a-zA-Z_-]*)([^0-9a-zA-Z_-])/g;
-const inlineTags = {
-  "'": true,
-  "*": true,
-  "+": true,
-  "~": true,
-  "%": true,
-  "@": true,
-  "^": true,
-  "!": true,
-  "?": true,
+const primitiveTags = {
+  "'": "string",
+  "+": "positive",
+  "~": "negative",
+  "!": "false",
+  "^": "true",
+  "?": "null",
+  "*": "seen",
+  "&": "known",
+  "@": "degree",
+  "%": "percent",
 };
 
-export function decode(encoded: string): unknown {
+/**
+ * Given an encoded string and known values shared between encoder and decoder,
+ * return the value that was encoded.
+ * Objects and Arrays will be lazilly decoded,
+ * so only the root value is decoded eagerly.
+ */
+export function decode(encoded: string, knownValues: unknown[] = []): any {
+  // Convert to UTF-8 form so the byte offsets make sense
+  const buffer = new TextEncoder().encode(encoded);
+  // Record offset as we go through the buffer
   let offset = 0;
-  return decodeAny();
+  // Start decoding at the root
+  return decodePart();
 
-  function lazyStub(
-    object: unknown[] | object,
-    index: number | string,
-    savedOffset: number
-  ) {
-    Object.defineProperty(object, index, {
+  // Test if an ascii byte is a valid base64 character
+  function isB64Byte(b: number): boolean {
+    return (
+      (b >= 48 && b <= 57) || // 0-9
+      (b >= 65 && b <= 90) || // A-Z
+      (b >= 97 && b <= 122) || // a-z
+      b === 45 || // -
+      b === 95 // _
+    );
+  }
+
+  /**
+   * Consume b64 characters and return as string
+   */
+  function consumeB64(): string {
+    const start = offset;
+    while (isB64Byte(buffer[offset])) offset++;
+    return stringSlice(start, offset);
+  }
+
+  /**
+   * Consume one value as cheaply as possible by only moving offset.
+   */
+  function skip() {
+    const b64Str = consumeB64();
+    const tag = String.fromCharCode(buffer[offset++]);
+    if (!primitiveTags[tag]) {
+      offset += b64Decode(b64Str);
+    }
+  }
+
+  /**
+   * Return the next value in the stream.
+   * Note: offset is implicitly modified.
+   */
+  function decodePart(): unknown {
+    const b64Str = consumeB64();
+    const tag = String.fromCharCode(buffer[offset++]);
+
+    // With `'` strings, the b64 number is the string
+    if (tag === "'") return b64Str;
+
+    // Everything else treats the b64 number as a number
+    const num = b64Decode(b64Str);
+
+    // Decode the value based on the tag
+    if (tag === "*") return decodePointer(num);
+    if (tag === "&") return knownValues[num];
+    if (tag === "+") return num;
+    if (tag === "~") return -1 - num;
+    if (tag === "@") return num / 360;
+    if (tag === "%") return num / 100;
+    if (tag === "^") return true;
+    if (tag === "!") return false;
+    if (tag === "?") return null;
+
+    // All other types are length-prefixed containers of some kind
+    const start = offset;
+    offset += num;
+    if (tag === "{") return wrapObject(start, offset);
+    if (tag === "[") return wrapArray(start, offset);
+    if (tag === "$") return stringSlice(start, offset);
+    if (tag === ".") return parseFloat(stringSlice(start, offset));
+    throw new Error("Uknown of invalid tag: " + tag);
+  }
+
+  function stringSlice(start: number, end: number): string {
+    return new TextDecoder().decode(buffer.subarray(start, end));
+  }
+
+  function decodePointer(dist: number): unknown {
+    const saved = offset;
+    offset += dist;
+    const seen = decodePart();
+    offset = saved;
+    return seen;
+  }
+
+  /**
+   * Lazy object wrapper that decodes keys eagerly but values lazily.
+   */
+  function wrapObject(start: number, end: number): object {
+    const obj = {};
+    offset = start;
+    while (offset < end) {
+      const key = String(decodePart());
+      magicGetter(obj, key, offset);
+      skip();
+    }
+    return obj;
+  }
+
+  /**
+   * Lazy array wrapper that decodes keys eagerly but values lazily.
+   */
+  function wrapArray(start: number, end: number): unknown[] {
+    const arr = [];
+    let index = 0;
+    offset = start;
+    while (offset < end) {
+      magicGetter(arr, index, offset);
+      skip();
+      index++;
+    }
+    return arr;
+  }
+
+  /**
+   * Define the property with a getter that decodes the value
+   * and replaces the getter with a value on first access.
+   */
+  function magicGetter(
+    obj: object | unknown[],
+    key: PropertyKey,
+    valueOffset: number
+  ): void {
+    Object.defineProperty(obj, key, {
       get() {
-        const save = offset;
+        const savedOffset = offset;
+        offset = valueOffset;
+        const value = decodePart();
         offset = savedOffset;
-        const value = decodeAny();
-        offset = save;
-        Object.defineProperty(object, index, {
+        Object.defineProperty(obj, key, {
           value,
           enumerable: true,
-          writable: false,
           configurable: false,
+          writable: false,
         });
         return value;
       },
@@ -390,96 +328,52 @@ export function decode(encoded: string): unknown {
       configurable: true,
     });
   }
+}
 
-  function skipAny() {
-    console.log("skipAny", {
-      encoded,
-      offset,
-      tail: encoded.substring(offset),
-    });
-    // Math base64 characters at offset
-    re.lastIndex = offset;
-    const [all, header, tag] = re.exec(encoded)!;
-    offset += all.length;
-    if (!inlineTags[tag]) {
-      const n = Number(b64Decode(header));
-      const start = offset;
-      offset += n;
-      if (offset > encoded.length) {
-        console.log({ offset, header, tag, start, n, encoded });
-        throw new Error(`Invalid length (${offset}/${encoded.length})`);
-      }
-    }
-  }
+const chars =
+  "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 
-  function decodeAny(): unknown {
-    // Math base64 characters at offset
-    re.lastIndex = offset;
-    const [all, header, tag] = re.exec(encoded)!;
-    offset += all.length;
-    if (tag === "'") return header;
-    const n = b64Decode(header);
-    if (tag === "*") {
-      const save = offset;
-      offset += Number(n);
-      const val = decodeAny();
-      offset = save;
-      return val;
-    }
-    if (tag === "+") return n;
-    if (tag === "~") return toNumberMaybe(-1n - BigInt(n));
-    if (tag === "%") return Number(zigzagDecode(BigInt(n))) / 100;
-    if (tag === "@") return Number(zigzagDecode(BigInt(n))) / 360;
-    if (tag === "^") return true;
-    if (tag === "!") return false;
-    if (tag === "?") return null;
-    const end = offset + Number(n);
-    if (end > encoded.length) {
-      console.log({ offset, header, tag, n, end, encoded });
-      throw new Error(`Invalid length (${end}/${encoded.length})`);
-    }
-    if (tag === "/") {
-      const parts: string[] = [];
-      while (offset < end) {
-        const part = decodeAny() as string;
-        parts.push(part);
-      }
-      if (offset !== end) throw new Error("Invalid string list");
-      return parts.join("");
-    }
-    if (tag === "[") {
-      const arr: unknown[] = [];
-      let length = 0;
-      while (offset < end) {
-        lazyStub(arr, length, offset);
-        console.log({ offset, end });
-        skipAny();
-        length++;
-      }
-      if (offset !== end) throw new Error("Invalid list");
-      return arr;
-    }
-    if (tag === "{") {
-      const obj: Record<string, unknown> = {};
-      while (offset < end) {
-        const key = decodeAny() as string;
-        lazyStub(obj, key, offset);
-        skipAny();
-      }
-      if (offset !== end) throw new Error("Invalid map");
-      return obj;
-    }
-    const body = encoded.substring(offset, end);
-    offset = end;
-    if (tag === "$") return body;
-    if (tag === ".") {
-      if (body === "-inf") return -Infinity;
-      if (body === "inf") return Infinity;
-      if (body === "nan") return NaN;
-      return Number(body);
-    }
-    console.log({ header, tag, n, encoded, offset, body });
-    // if (tag === ".")
-    throw new Error("TODO: decoder");
+function b64Encode(num: number): string {
+  let str = "";
+  while (num > 0) {
+    str = chars[num % 64] + str;
+    num = Math.floor(num / 64);
   }
+  return str;
+}
+
+function b64Decode(str: string): number {
+  let num = 0;
+  for (let i = 0, len = str.length; i < len; i++) {
+    num = 64 * num + chars.indexOf(str[i]);
+  }
+  return num;
+}
+
+function sizeNeeded(num: number): number {
+  if (num === 0) return 0;
+  return Math.floor(Math.log(num) / Math.log(64) + 1);
+}
+
+function sameShape(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!sameShape(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (typeof a === "object") {
+    if (typeof b !== "object") return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    if (!sameShape(aKeys, bKeys)) return false;
+    if (!sameShape(Object.values(a), Object.values(b))) return false;
+    return true;
+  }
+  return false;
 }
