@@ -17,6 +17,29 @@ writeFileSync("vanilla.json", json)
 writeFileSync("vanilla.rando", rando)
 writeFileSync("vanilla.bando", bando)
 
+console.time("JSON")
+console.time("JSON parse")
+const jsonParsed = JSON.parse(json)
+console.timeEnd("JSON parse")
+console.time("JSON access")
+console.log(jsonParsed.entities
+    .cave_spider["minecraft:entity"]
+    .component_groups["minecraft:spider_hostile"]["minecraft:environment_sensor"]
+    .on_environment.filters.value)
+console.timeEnd("JSON access")
+console.timeEnd("JSON")
+console.time("Rando")
+const randoParsed = randoDecode(rando)
+console.timeEnd("Rando")
+console.time("Rando access")
+console.log(randoParsed.entities
+    .cave_spider["minecraft:entity"]
+    .component_groups["minecraft:spider_hostile"]["minecraft:environment_sensor"]
+    .on_environment.filters.value)
+console.timeEnd("Rando access")
+// console.time("Bando")
+// const bandoParsed = bandoDecode(bando)
+// console.timeEnd("Bando")
 
 function scan(...path) {
     const fullPath = root + "/" + path.join("/")
