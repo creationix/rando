@@ -1,18 +1,48 @@
 let utf8decoder = new TextDecoder();
 let utf8Encoder = new TextEncoder();
 
-const NULL = utf8Encoder.encode("?");
-const TRUE = utf8Encoder.encode("^");
-const FALSE = utf8Encoder.encode("!");
+const SIMPLE = 0;
+const POSINT = 1;
+const NEGINT = 2;
+const PERCENT = 3;
+const DEGREE = 4;
+const FLOAT = 5;
+const POINTER = 6;
+const REFERENCE = 7;
+
+const STRING = 8;
+const BYTES = 9;
+const LIST = 10;
+const MAP = 11;
+const ARRAY = 12;
+
+// Like rando, but binary using nibs headers
+const FALSE = 0;
+const FALSE_ENCODED = nibsEncode(SIMPLE, FALSE);
+const TRUE = 1;
+const TRUE_ENCODED = nibsEncode(SIMPLE, TRUE);
+const NULL = 2;
+const NULL_ENCODED = nibsEncode(SIMPLE, NULL);
+
+const primitiveTags = {
+  [SIMPLE]: true,
+  [POSINT]: true,
+  [NEGINT]: true,
+  [PERCENT]: true,
+  [DEGREE]: true,
+  [FLOAT]: true,
+  [POINTER]: true,
+  [REFERENCE]: true,
+};
 
 /**
  * Given a value and optional list of known values shared between encoder and decoder,
- * return a string representation of the value.
+ * return a binary representation of the value.
  */
 export function encode(
   rootValue: unknown,
   knownValues: unknown[] = []
-): string {
+): Uint8Array {
   // Array of byte arrays to be combined into a single byte array
   const parts: Uint8Array[] = [];
 
@@ -48,7 +78,7 @@ export function encode(
     buffer.set(part, offset);
     offset += part.byteLength;
   }
-  return utf8decoder.decode(buffer);
+  return buffer;
 
   function push(value: Uint8Array): number {
     parts.push(value);
@@ -61,12 +91,12 @@ export function encode(
     return push(utf8Encoder.encode(value));
   }
 
-  function pushInline(num: number, tag: string) {
-    return pushStr(b64Encode(num) + tag);
+  function pushNibs(num: number, tag: number) {
+    return push(nibsEncode(tag, num));
   }
 
-  function pushContainer(written: number, tag: string) {
-    return written + pushStr(b64Encode(written) + tag);
+  function pushContainer(written: number, tag: number) {
+    return written + pushNibs(tag, written);
   }
 
   function encodeAny(value: unknown): number {
@@ -80,7 +110,7 @@ export function encode(
         }
       }
     }
-    if (typeof known === "number") return pushInline(known, "&");
+    if (typeof known === "number") return pushNibs(known, REFERENCE);
 
     // If the value has been seen before and a pointer is
     // cheaper than encoding it again, encode it as a pointer
@@ -88,8 +118,8 @@ export function encode(
     if (seen) {
       const [seenOffset, cost] = seen;
       const dist = size - seenOffset;
-      const pointerCost = sizeNeeded(dist) + 1;
-      if (pointerCost < cost) return pushInline(dist, "*");
+      const pointerCost = sizeNeeded(dist);
+      if (pointerCost < cost) return pushNibs(dist, POINTER);
     }
 
     // Encode the value and record how expensive it was to write
@@ -104,39 +134,53 @@ export function encode(
   }
 
   function encodeAnyInner(value: unknown): number {
-    if (value == null) return push(NULL);
-    if (value === true) return push(TRUE);
-    if (value === false) return push(FALSE);
-    if (Array.isArray(value)) return encodeList(value);
+    if (value == null) return push(NULL_ENCODED);
+    if (value === true) return push(TRUE_ENCODED);
+    if (value === false) return push(FALSE_ENCODED);
+    if (Array.isArray(value)) return encodeArray(value);
+    if (ArrayBuffer.isView(value)) return encodeBytes(value);
     if (typeof value === "object") return encodeObject(value);
     if (typeof value === "string") return encodeString(value);
     if (typeof value === "number") return encodeNumber(value);
     console.warn("Unsupported value", value);
-    return push(NULL);
+    return push(NULL_ENCODED);
+  }
+
+  function encodeBytes(value: ArrayBufferView): number {
+    const buf = new Uint8Array(
+      value.buffer,
+      value.byteOffset,
+      value.byteLength
+    );
+    return pushContainer(push(buf), BYTES);
   }
 
   function encodeString(value: string): number {
-    return pushContainer(pushStr(value), "$");
+    return pushContainer(pushStr(value), STRING);
   }
 
   function encodeNumber(value: number): number {
     if (Number.isInteger(value)) {
       if (value >= 0) {
-        return pushInline(value, "+");
+        return pushNibs(value, POSINT);
       }
-      return pushInline(-1 - value, "~");
+      return pushNibs(-1 - value, NEGINT);
     }
     if (value > 0 && value < 2.3e13) {
       const percent = Math.round(value * 100);
       if (Math.abs(percent - value * 100) < 1e-15) {
-        return pushInline(percent, "%");
+        return pushNibs(percent, PERCENT);
       }
       const degree = Math.round(value * 360);
       if (Math.abs(degree - value * 360) < 1e-15) {
-        return pushInline(degree, "@");
+        return pushNibs(degree, DEGREE);
       }
     }
-    return pushContainer(pushStr(value.toString()), ".");
+    const buf = new Uint8Array(5);
+    const view = new DataView(buf.buffer);
+    view.setFloat32(1, value, true);
+    buf[0] = (FLOAT << 4) | 14;
+    return push(buf);
   }
 
   function encodeObject(value: object): number {
@@ -151,93 +195,139 @@ export function encode(
     }
     const end = size;
     if (written !== end - start) throw new Error("Size mismatch");
-    return pushContainer(written, "|");
+    return pushContainer(written, MAP);
   }
 
-  function encodeList(value: unknown[]): number {
+  function encodeArray(value: unknown[]): number {
     const start = size;
     let written = 0;
-    const indexed = value.length > 100;
-    const offsets: number[] = [];
     for (let i = value.length - 1; i >= 0; --i) {
       const valueSize = encodeAny(value[i]);
-      offsets[i] = size;
       written += valueSize;
     }
     const end = size;
     if (written !== end - start) throw new Error("Size mismatch");
-    if (indexed) {
-      const count = offsets.length;
-      const width = sizeNeeded(end - offsets[count - 1]);
-      for (let i = count - 1; i >= 0; i--) {
-        pushStr(b64Encode(end - offsets[i]).padStart(width, "A"));
-      }
-      pushStr(`${b64Encode(width)}:${b64Encode(count)}:`);
-      return pushContainer(size - start, "#");
-    }
-    return pushContainer(written, ":");
+    return pushContainer(written, LIST);
   }
 }
 
-const primitiveTags = {
-  "+": "positive",
-  "~": "negative",
-  "!": "false",
-  "^": "true",
-  "?": "null",
-  "*": "seen",
-  "&": "known",
-  "@": "degree",
-  "%": "percent",
-};
+function nibsEncode(tag: number, num: number): Uint8Array {
+  if (num < 12) {
+    return new Uint8Array([(tag << 4) | num]);
+  }
+  if (num < 0x100) {
+    return new Uint8Array([(tag << 4) | 12, num]);
+  }
+  if (num < 0x10000) {
+    const buf = new Uint8Array(3);
+    const view = new DataView(buf.buffer);
+    buf[0] = (tag << 4) | 13;
+    view.setUint16(1, num, true);
+    return buf;
+  }
+  if (num < 0x100000000) {
+    const buf = new Uint8Array(5);
+    const view = new DataView(buf.buffer);
+    buf[0] = (tag << 4) | 14;
+    view.setUint32(1, num, true);
+    return buf;
+  }
+  const buf = new Uint8Array(9);
+  const view = new DataView(buf.buffer);
+  buf[0] = (tag << 4) | 15;
+  view.setBigUint64(1, BigInt(num), true);
+  return buf;
+}
 
-function b64Value(b: number): number {
-  if (b >= 65 && b <= 90) return b - 65; // A-Z
-  if (b >= 97 && b <= 122) return b - 71; // a-z
-  if (b >= 48 && b <= 57) return b + 4; // 0-9
-  if (b === 45) return 62; // -
-  if (b === 95) return 63; // _
-  return -1;
+function sizeNeeded(num: number): number {
+  if (num < 12) return 1;
+  if (num < 0x100) return 2;
+  if (num < 0x10000) return 3;
+  if (num < 0x100000000) return 5;
+  return 9;
+}
+
+function sameShape(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!sameShape(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (typeof a === "object") {
+    if (typeof b !== "object") return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    if (!sameShape(aKeys, bKeys)) return false;
+    if (!sameShape(Object.values(a), Object.values(b))) return false;
+    return true;
+  }
+  return false;
 }
 
 /**
- * Given an encoded string and known values shared between encoder and decoder,
+ * Given an encoded buffer and known values shared between encoder and decoder,
  * return the value that was encoded.
  * Objects and Arrays will be lazilly decoded,
  * so only the root value is decoded eagerly.
  */
-export function decode(encoded: string, knownValues: unknown[] = []): any {
-  // Convert to UTF-8 form so the byte offsets make sense
-  console.time("parse");
-  const buffer = utf8Encoder.encode(encoded);
+export function decode(encoded: Uint8Array, knownValues: unknown[] = []): any {
+  // A DataView for convenience
+  const encodedView = new DataView(
+    encoded.buffer,
+    encoded.byteOffset,
+    encoded.byteLength
+  );
   // Record offset as we go through the buffer
   let offset = 0;
   // Start decoding at the root
   return decodePart();
 
-  /**
-   * Consume b64 characters and return as string
-   */
-  function parseB64(): number {
-    const s = offset;
-    let num = 0;
-    let b: number;
-    while ((b = b64Value(buffer[offset])) >= 0) {
-      num = num * 64 + b;
-      offset++;
+  function decodeNibsPair(): [number, number] {
+    const b = encoded[offset++];
+    const small = b >>> 4;
+    let big = b & 15;
+    if (big < 12) {
+      return [small, big];
     }
-    return num;
+    if (big === 12) {
+      return [small, encoded[offset++]];
+    }
+    if (big === 13) {
+      big = encodedView.getUint16(offset, true);
+      offset += 2;
+      return [small, big];
+    }
+    if (big === 14) {
+      big = encodedView.getUint32(offset, true);
+      offset += 4;
+      return [small, big];
+    }
+    big = Number(encodedView.getBigUint64(offset, true));
+    offset += 8;
+    return [small, big];
   }
 
   /**
    * Consume one value as cheaply as possible by only moving offset.
    */
   function skip() {
-    const num = parseB64();
-    const tag = String.fromCharCode(buffer[offset++]);
+    const [tag, num] = decodeNibsPair();
     if (!primitiveTags[tag]) {
       offset += num;
     }
+  }
+
+  function intToFloat(num: number): number {
+    const buf = new ArrayBuffer(4);
+    const view = new DataView(buf);
+    view.setUint32(0, num, true);
+    return view.getFloat32(0, true);
   }
 
   /**
@@ -245,38 +335,37 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
    * Note: offset is implicitly modified.
    */
   function decodePart(): unknown {
-    const bstart = offset;
-    const num = parseB64();
-    const bend = offset;
-    const tag = String.fromCharCode(buffer[offset++]);
+    const [tag, num] = decodeNibsPair();
 
     // Decode the value based on the tag
-    if (tag === "*") return decodePointer(num);
-    if (tag === "&") return knownValues[num];
-    if (tag === "+") return num;
-    if (tag === "~") return -1 - num;
-    if (tag === "@") return num / 360;
-    if (tag === "%") return num / 100;
-    if (tag === "^") return true;
-    if (tag === "!") return false;
-    if (tag === "?") return null;
+    if (tag === POINTER) return decodePointer(num);
+    if (tag === REFERENCE) return knownValues[num];
+    if (tag === POSINT) return num;
+    if (tag === NEGINT) return -1 - num;
+    if (tag === DEGREE) return num / 360;
+    if (tag === PERCENT) return num / 100;
+    if (tag === FLOAT) return intToFloat(num);
+    if (tag === SIMPLE) {
+      if (num === TRUE) return true;
+      if (num === FALSE) return false;
+      if (num === NULL) return null;
+    }
 
     // All other types are length-prefixed containers of some kind
     const start = offset;
     const end = offset + num;
     let val: unknown;
-    if (tag === "|") val = wrapObject(start, end);
-    else if (tag === ":") val = wrapList(start, end);
-    else if (tag === "#") val = wrapArray(start, end);
-    else if (tag === "$") val = stringSlice(start, end);
-    else if (tag === ".") val = parseFloat(stringSlice(start, end));
+    if (tag === MAP) val = wrapObject(start, end);
+    else if (tag === LIST) val = wrapList(start, end);
+    else if (tag === ARRAY) val = wrapArray(start, end);
+    else if (tag === STRING) val = stringSlice(start, end);
     else throw new Error("Unknown or invalid tag: " + tag);
     offset = end;
     return val;
   }
 
   function stringSlice(start: number, end: number): string {
-    return utf8decoder.decode(buffer.subarray(start, end));
+    return utf8decoder.decode(encoded.subarray(start, end));
   }
 
   function decodePointer(dist: number): unknown {
@@ -320,14 +409,7 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
    * Lazy array wrapper that decodes offsets eagerly but values lazily.
    */
   function wrapArray(start: number, end: number): unknown[] {
-    const width = parseB64();
-    if (String.fromCharCode(buffer[offset++]) !== ":") {
-      throw new Error("Missing index ':'");
-    }
-    const count = parseB64();
-    if (String.fromCharCode(buffer[offset++]) !== ":") {
-      throw new Error("Missing index ':'");
-    }
+    const [width, count] = decodeNibsPair();
     const indexStart = offset;
     const indexEnd = indexStart + width * count;
 
@@ -344,7 +426,8 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
             offset = indexStart + width * index;
             let ptr = 0;
             for (let i = 0; i < width; i++) {
-              ptr = ptr * 64 + b64Value(buffer[offset++]);
+              throw "TODO";
+              // ptr = ptr * 64 + b64Value(buffer[offset++]);
             }
             // Jump to where the pointer points
             offset = indexEnd + ptr;
@@ -384,81 +467,4 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
       configurable: true,
     });
   }
-}
-
-const chars =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
-function b64Encode(num: number): string {
-  let str = "";
-  while (num > 0) {
-    str = chars[num % 64] + str;
-    num = Math.floor(num / 64);
-  }
-  return str;
-}
-
-function sizeNeeded(num: number): number {
-  if (num === 0) return 0;
-  return Math.floor(Math.log(num) / Math.log(64) + 1);
-}
-
-function sameShape(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b)) return false;
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (!sameShape(a[i], b[i])) return false;
-    }
-    return true;
-  }
-  if (typeof a === "object") {
-    if (typeof b !== "object") return false;
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    if (aKeys.length !== bKeys.length) return false;
-    if (!sameShape(aKeys, bKeys)) return false;
-    if (!sameShape(Object.values(a), Object.values(b))) return false;
-    return true;
-  }
-  return false;
-}
-
-const values = [
-  0,
-  1,
-  10,
-  100,
-  1000,
-  -1,
-  -10,
-  -100,
-  -1000,
-  1 / 30,
-  0.13,
-  3.14159,
-  true,
-  false,
-  null,
-  "",
-  "Banana",
-  "Hi, World",
-  "🍌",
-  [1, 2, 3],
-  [100, 100, 100],
-  { a: 1, b: 2, c: 3 },
-  [{ name: "Alice" }, { name: "Bob" }],
-];
-console.log(`| JSON       | Rando      |`);
-console.log(`| ----------:|:---------- |`);
-for (const v of values) {
-  console.log(
-    `| ${("`" + JSON.stringify(v) + "`").padStart(20, " ")} | ${(
-      "`" +
-      encode(v) +
-      "`"
-    ).padEnd(20, " ")} |`
-  );
 }
