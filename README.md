@@ -73,7 +73,7 @@ const sampleDoc = {
 
 const encoded = encode(sampleDoc);
 console.log(encoded);
-// 1v{person'G{name'8$John Doeage'u+id'30V+ai-generated'^list'a[1+2+3+4+5+6*n{b*d*nested'a{key'value'
+// Bo;G$personu;E$nameI$John DoeD$agee+C$idDA5+M$ai-generated^E$listK:B+C+D+E+F+G*a;M*P*G$nestedM;D$keyF$value
 
 const decoded = decode(encoded);
 console.log(decoded);
@@ -152,7 +152,7 @@ For example, consider encoding this object:
     ["accept", "application/json"],
     ["user-agent", "Mozilla/5.0"],
   ],
-},
+}
 ```
 
 With this shared set of known values:
@@ -183,7 +183,7 @@ With this shared set of known values:
 This yields the following rando encoding which is about 1/3 the size JSON would be.
 
 ```
-R{&1&5&7&8&b$example.com9&d&a&b&e&j[h&f[g&b$Mozilla/5.0
+1;&B&F&H&I&L$example.comJ&N&K&L&O&T:R&P:Q&L$Mozilla/5.0
 ```
 
 ## Advanced Usage
@@ -222,7 +222,7 @@ const httpResponse = {
 
 const encoded = encode(httpResponse, sharedValued);
 console.log(encoded);
-// A{5&6&&8[3&4[2&h+1&h${"hello":"world"}
+// k;F&G&&I:D&E:C&R+B&R${"hello":"world"}
 
 const decoded = decode(encoded, sharedValued);
 console.log(decoded);
