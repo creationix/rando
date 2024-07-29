@@ -1,21 +1,39 @@
-const SIMPLE = 0
-const POSINT = 1
-const NEGINT = 2
-const PERCENT = 3
-const DEGREE = 4
-const FLOAT = 5
-const POINTER = 6
-const REFERENCE = 7
+let utf8decoder = new TextDecoder();
+let utf8Encoder = new TextEncoder();
 
-const STRING = 8
-const BYTES = 9
-const LIST = 10
-const MAP = 11
+const SIMPLE = 0;
+const POSINT = 1;
+const NEGINT = 2;
+const PERCENT = 3;
+const DEGREE = 4;
+const FLOAT = 5;
+const POINTER = 6;
+const REFERENCE = 7;
+
+const STRING = 8;
+const BYTES = 9;
+const LIST = 10;
+const MAP = 11;
+const ARRAY = 12;
 
 // Like rando, but binary using nibs headers
-const FALSE = nibsEncode(SIMPLE, 0)
-const TRUE = nibsEncode(SIMPLE, 1)
-const NULL = nibsEncode(SIMPLE, 2)
+const FALSE = 0;
+const FALSE_ENCODED = nibsEncode(SIMPLE, FALSE);
+const TRUE = 1;
+const TRUE_ENCODED = nibsEncode(SIMPLE, TRUE);
+const NULL = 2;
+const NULL_ENCODED = nibsEncode(SIMPLE, NULL);
+
+const primitiveTags = {
+  [SIMPLE]: true,
+  [POSINT]: true,
+  [NEGINT]: true,
+  [PERCENT]: true,
+  [DEGREE]: true,
+  [FLOAT]: true,
+  [POINTER]: true,
+  [REFERENCE]: true,
+};
 
 /**
  * Given a value and optional list of known values shared between encoder and decoder,
@@ -70,7 +88,7 @@ export function encode(
   }
 
   function pushStr(value: string) {
-    return push(new TextEncoder().encode(value));
+    return push(utf8Encoder.encode(value));
   }
 
   function pushNibs(num: number, tag: number) {
@@ -116,20 +134,24 @@ export function encode(
   }
 
   function encodeAnyInner(value: unknown): number {
-    if (value == null) return push(NULL);
-    if (value === true) return push(TRUE);
-    if (value === false) return push(FALSE);
+    if (value == null) return push(NULL_ENCODED);
+    if (value === true) return push(TRUE_ENCODED);
+    if (value === false) return push(FALSE_ENCODED);
     if (Array.isArray(value)) return encodeArray(value);
     if (ArrayBuffer.isView(value)) return encodeBytes(value);
     if (typeof value === "object") return encodeObject(value);
     if (typeof value === "string") return encodeString(value);
     if (typeof value === "number") return encodeNumber(value);
     console.warn("Unsupported value", value);
-    return push(NULL);
+    return push(NULL_ENCODED);
   }
 
   function encodeBytes(value: ArrayBufferView): number {
-    const buf = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    const buf = new Uint8Array(
+      value.buffer,
+      value.byteOffset,
+      value.byteLength
+    );
     return pushContainer(push(buf), BYTES);
   }
 
@@ -157,7 +179,7 @@ export function encode(
     const buf = new Uint8Array(5);
     const view = new DataView(buf.buffer);
     view.setFloat32(1, value, true);
-    buf[0] = FLOAT << 4 | 14;
+    buf[0] = (FLOAT << 4) | 14;
     return push(buf);
   }
 
@@ -191,28 +213,28 @@ export function encode(
 
 function nibsEncode(tag: number, num: number): Uint8Array {
   if (num < 12) {
-    return new Uint8Array([tag << 4 | num]);
+    return new Uint8Array([(tag << 4) | num]);
   }
   if (num < 0x100) {
-    return new Uint8Array([tag << 4 | 12, num]);
+    return new Uint8Array([(tag << 4) | 12, num]);
   }
   if (num < 0x10000) {
     const buf = new Uint8Array(3);
     const view = new DataView(buf.buffer);
-    buf[0] = tag << 4 | 13;
+    buf[0] = (tag << 4) | 13;
     view.setUint16(1, num, true);
     return buf;
   }
   if (num < 0x100000000) {
     const buf = new Uint8Array(5);
     const view = new DataView(buf.buffer);
-    buf[0] = tag << 4 | 14;
+    buf[0] = (tag << 4) | 14;
     view.setUint32(1, num, true);
     return buf;
   }
   const buf = new Uint8Array(9);
   const view = new DataView(buf.buffer);
-  buf[0] = tag << 4 | 15;
+  buf[0] = (tag << 4) | 15;
   view.setBigUint64(1, BigInt(num), true);
   return buf;
 }
@@ -248,6 +270,201 @@ function sameShape(a: unknown, b: unknown): boolean {
   return false;
 }
 
+/**
+ * Given an encoded buffer and known values shared between encoder and decoder,
+ * return the value that was encoded.
+ * Objects and Arrays will be lazilly decoded,
+ * so only the root value is decoded eagerly.
+ */
 export function decode(encoded: Uint8Array, knownValues: unknown[] = []): any {
-  throw new Error("TODO: decode")
+  // A DataView for convenience
+  const encodedView = new DataView(
+    encoded.buffer,
+    encoded.byteOffset,
+    encoded.byteLength
+  );
+  // Record offset as we go through the buffer
+  let offset = 0;
+  // Start decoding at the root
+  return decodePart();
+
+  function decodeNibsPair(): [number, number] {
+    const b = encoded[offset++];
+    const small = b >>> 4;
+    let big = b & 15;
+    if (big < 12) {
+      return [small, big];
+    }
+    if (big === 12) {
+      return [small, encoded[offset++]];
+    }
+    if (big === 13) {
+      big = encodedView.getUint16(offset, true);
+      offset += 2;
+      return [small, big];
+    }
+    if (big === 14) {
+      big = encodedView.getUint32(offset, true);
+      offset += 4;
+      return [small, big];
+    }
+    big = Number(encodedView.getBigUint64(offset, true));
+    offset += 8;
+    return [small, big];
+  }
+
+  /**
+   * Consume one value as cheaply as possible by only moving offset.
+   */
+  function skip() {
+    const [tag, num] = decodeNibsPair();
+    if (!primitiveTags[tag]) {
+      offset += num;
+    }
+  }
+
+  function intToFloat(num: number): number {
+    const buf = new ArrayBuffer(4);
+    const view = new DataView(buf);
+    view.setUint32(0, num, true);
+    return view.getFloat32(0, true);
+  }
+
+  /**
+   * Return the next value in the stream.
+   * Note: offset is implicitly modified.
+   */
+  function decodePart(): unknown {
+    const [tag, num] = decodeNibsPair();
+
+    // Decode the value based on the tag
+    if (tag === POINTER) return decodePointer(num);
+    if (tag === REFERENCE) return knownValues[num];
+    if (tag === POSINT) return num;
+    if (tag === NEGINT) return -1 - num;
+    if (tag === DEGREE) return num / 360;
+    if (tag === PERCENT) return num / 100;
+    if (tag === FLOAT) return intToFloat(num);
+    if (tag === SIMPLE) {
+      if (num === TRUE) return true;
+      if (num === FALSE) return false;
+      if (num === NULL) return null;
+    }
+
+    // All other types are length-prefixed containers of some kind
+    const start = offset;
+    const end = offset + num;
+    let val: unknown;
+    if (tag === MAP) val = wrapObject(start, end);
+    else if (tag === LIST) val = wrapList(start, end);
+    else if (tag === ARRAY) val = wrapArray(start, end);
+    else if (tag === STRING) val = stringSlice(start, end);
+    else throw new Error("Unknown or invalid tag: " + tag);
+    offset = end;
+    return val;
+  }
+
+  function stringSlice(start: number, end: number): string {
+    return utf8decoder.decode(encoded.subarray(start, end));
+  }
+
+  function decodePointer(dist: number): unknown {
+    const saved = offset;
+    offset += dist;
+    const seen = decodePart();
+    offset = saved;
+    return seen;
+  }
+
+  /**
+   * Lazy object wrapper that decodes keys eagerly but values lazily.
+   */
+  function wrapObject(start: number, end: number): object {
+    const obj = {};
+    offset = start;
+    while (offset < end) {
+      const key = String(decodePart());
+      magicGetter(obj, key, offset);
+      skip();
+    }
+    return obj;
+  }
+
+  /**
+   * Lazy array wrapper that decodes offsets eagerly but values lazily.
+   */
+  function wrapList(start: number, end: number): unknown[] {
+    const arr = [];
+    let index = 0;
+    offset = start;
+    while (offset < end) {
+      magicGetter(arr, index, offset);
+      skip();
+      index++;
+    }
+    return arr;
+  }
+
+  /**
+   * Lazy array wrapper that decodes offsets eagerly but values lazily.
+   */
+  function wrapArray(start: number, end: number): unknown[] {
+    const [width, count] = decodeNibsPair();
+    const indexStart = offset;
+    const indexEnd = indexStart + width * count;
+
+    const arr: unknown[] = [];
+    return new Proxy(arr, {
+      get(target, property) {
+        if (property === "length") {
+          return count;
+        }
+        if (typeof property === "string" && /^[1-9][0-9]*$/.test(property)) {
+          const index = parseInt(property, 10);
+          if (index >= 0 && index < count) {
+            // Jump to and read index pointer
+            offset = indexStart + width * index;
+            let ptr = 0;
+            for (let i = 0; i < width; i++) {
+              throw "TODO";
+              // ptr = ptr * 64 + b64Value(buffer[offset++]);
+            }
+            // Jump to where the pointer points
+            offset = indexEnd + ptr;
+            const val = decodePart();
+            target[index] = val;
+            return val;
+          }
+        }
+        return undefined;
+      },
+    });
+  }
+  /**
+   * Define the property with a getter that decodes the value
+   * and replaces the getter with a value on first access.
+   */
+  function magicGetter(
+    obj: object | unknown[],
+    key: PropertyKey,
+    valueOffset: number
+  ): void {
+    Object.defineProperty(obj, key, {
+      get() {
+        const savedOffset = offset;
+        offset = valueOffset;
+        const value = decodePart();
+        offset = savedOffset;
+        Object.defineProperty(obj, key, {
+          value,
+          enumerable: true,
+          configurable: false,
+          writable: false,
+        });
+        return value;
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
 }
