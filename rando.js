@@ -141,7 +141,7 @@ export function encode(rootValue, knownValues = []) {
         const end = size;
         if (written !== end - start)
             throw new Error("Size mismatch");
-        return pushContainer(written, "|");
+        return pushContainer(written, ";");
     }
     function encodeList(value) {
         const start = size;
@@ -261,7 +261,7 @@ export function decode(encoded, knownValues = []) {
         const start = offset;
         const end = offset + num;
         let val;
-        if (tag === "|")
+        if (tag === ";")
             val = wrapObject(start, end);
         else if (tag === ":")
             val = wrapList(start, end);

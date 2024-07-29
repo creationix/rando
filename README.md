@@ -8,31 +8,31 @@
 
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
-|                                JSON | Rando                     | Comment                       |
-| ----------------------------------: | :------------------------ | ----------------------------- |
-|                                 `0` | `+`                       | Positive Integers (val)       |
-|                                 `1` | `1+`                      | "                             |
-|                                `10` | `a+`                      | "                             |
-|                               `100` | `1A+`                     | "                             |
-|                              `1000` | `fE+`                     | "                             |
-|                                `-1` | `~`                       | Negative Integers (-1 - val)  |
-|                               `-10` | `9~`                      | "                             |
-|                              `-100` | `1z~`                     | "                             |
-|                             `-1000` | `fD~`                     | "                             |
-|                              `0.13` | `d%`                      | Percent (val \* 100)          |
-|               `0.03333333333333333` | `c@`                      | Degree (val \* 360)           |
-|                           `3.14159` | `7.3.14159`               | Float (val as decimal)        |
-|                              `true` | `^`                       | Boolean                       |
-|                             `false` | `!`                       | "                             |
-|                              `null` | `?`                       | Null                          |
-|                                `""` | `$`                       | Empty String                  |
-|                          `"Banana"` | `Banana'`                 | B64 String                    |
-|                       `"Hi, World"` | `9$Hi, World`             | String                        |
-|                              `"🍌"` | `4$🍌`                    | UTF-8 String                  |
-|                           `[1,2,3]` | `6[1+2+3+`                | Lists                         |
-|                     `[100,100,100]` | `6[1**1A+`                | Lists with Pointers (repeats) |
-|               `{"a":1,"b":2,"c":3}` | `c{a'1+b'2+c'3+`          | Maps                          |
-| `[{"name":"Alice"},{"name":"Bob"}]` | `l[8{8*Alice'9{name'Bob'` | Maps and Lists with Pointers  |
+|                                JSON | Rando                        | Comment                     |
+| ----------------------------------: | :--------------------------- | --------------------------- |
+|                                 `0` | `+`                          | Positive Integers (val)     |
+|                                 `1` | `B+`                         | "                           |
+|                                `10` | `K+`                         | "                           |
+|                               `100` | `Bk+`                        | "                           |
+|                              `1000` | `Po+`                        | "                           |
+|                                `-1` | `~`                          | Negative Integers(-1 - val) |
+|                               `-10` | `J~`                         | "                           |
+|                              `-100` | `Bj~`                        | "                           |
+|                             `-1000` | `Pn~`                        | "                           |
+|                              `0.13` | `N%`                         | Percent (val \* 100)        |
+|               `0.03333333333333333` | `M@`                         | Degree (val \* 360)         |
+|                           `3.14159` | `H.3.14159`                  | Float (val as decimal)      |
+|                              `true` | `^`                          | Boolean                     |
+|                             `false` | `!`                          | "                           |
+|                              `null` | `?`                          | Null                        |
+|                                `""` | `$`                          | String                      |
+|                          `"Banana"` | `G$Banana`                   | "                           |
+|                       `"Hi, World"` | `J$Hi, World`                | "                           |
+|                              `"🍌"` | `E$🍌`                       | "                           |
+|                           `[1,2,3]` | `G:B+C+D+`                   | List                        |
+|                     `[100,100,100]` | `G:B**Bk+`                   | List with Pointers          |
+|               `{"a":1,"b":2,"c":3}` | `P;B$aB+B$bC+B$cD+`          | Map                         |
+| `[{"name":"Alice"},{"name":"Bob"}]` | `Y:J;J*F$AliceL;E$nameD$Bob` | Map and Lists with Pointers |
 
 Use Rando anywhere you might use JSON if the following are true:
 
