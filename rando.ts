@@ -151,7 +151,7 @@ export function encode(
     }
     const end = size;
     if (written !== end - start) throw new Error("Size mismatch");
-    return pushContainer(written, "|");
+    return pushContainer(written, ";");
   }
 
   function encodeList(value: unknown[]): number {
@@ -265,7 +265,7 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     const start = offset;
     const end = offset + num;
     let val: unknown;
-    if (tag === "|") val = wrapObject(start, end);
+    if (tag === ";") val = wrapObject(start, end);
     else if (tag === ":") val = wrapList(start, end);
     else if (tag === "#") val = wrapArray(start, end);
     else if (tag === "$") val = stringSlice(start, end);
