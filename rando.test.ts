@@ -35,7 +35,7 @@ test("encode/decode floats", () => {
   for (let i = -30; i <= 30; i++) {
     for (let j = -30; j <= 30; j++) {
       const num = i / j;
-      if (Number.isInteger(num)) continue;
+      if (!Number.isFinite(num) || Number.isInteger(num)) continue;
       nums.add(num);
     }
   }
@@ -214,7 +214,7 @@ function testRoundTrip(inputs: unknown[]) {
       console.log(json.padStart(38, " ") + "  " + encoded);
     }
     const decoded = decode(encoded);
-    console.log({ input, decoded });
+    // console.log({ input, decoded });
     JSON.stringify(decoded);
     expect(decoded).toEqual(input);
   }

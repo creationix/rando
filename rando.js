@@ -1,8 +1,54 @@
 let utf8decoder = new TextDecoder();
 let utf8Encoder = new TextEncoder();
-const NULL = utf8Encoder.encode("?");
-const TRUE = utf8Encoder.encode("^");
-const FALSE = utf8Encoder.encode("!");
+const POSINT = "+".charCodeAt(0);
+const NEGINT = "~".charCodeAt(0);
+const STRING = "$".charCodeAt(0);
+const MAP = ";".charCodeAt(0);
+const LIST = ":".charCodeAt(0);
+const ARRAY = "#".charCodeAt(0);
+const FLOAT = ".".charCodeAt(0);
+const PERCENT = "%".charCodeAt(0);
+const DEGREE = "@".charCodeAt(0);
+const SEEN = "*".charCodeAt(0);
+const KNOWN = "&".charCodeAt(0);
+const NULL = new Uint8Array(["?".charCodeAt(0)]);
+const TRUE = new Uint8Array(["^".charCodeAt(0)]);
+const FALSE = new Uint8Array(["!".charCodeAt(0)]);
+const converter = new DataView(new ArrayBuffer(4));
+function castFloatToInt(num) {
+    converter.setFloat32(0, num, true);
+    return converter.getUint32(0, true);
+}
+function castIntToFloat(num) {
+    converter.setUint32(0, num, true);
+    return converter.getFloat32(0, true);
+}
+function decodeB64Byte(byte) {
+    if (byte >= 65 && byte <= 90)
+        return byte - 65; // A-Z
+    if (byte >= 97 && byte <= 122)
+        return byte - 71; // a-z
+    if (byte >= 48 && byte <= 57)
+        return byte + 4; // 0-9
+    if (byte === 45)
+        return 62; // -
+    if (byte === 95)
+        return 63; // _
+    return -1;
+}
+function encodeB64Byte(num) {
+    if (num >= 0 && num < 26)
+        return num + 65; // A-Z
+    if (num >= 26 && num < 52)
+        return num + 71; // a-z
+    if (num >= 52 && num < 62)
+        return num - 4; // 0-9
+    if (num === 62)
+        return 45; // -
+    if (num === 63)
+        return 95; // _
+    return -1;
+}
 /**
  * Given a value and optional list of known values shared between encoder and decoder,
  * return a string representation of the value.
@@ -51,11 +97,17 @@ export function encode(rootValue, knownValues = []) {
     function pushStr(value) {
         return push(utf8Encoder.encode(value));
     }
-    function pushInline(num, tag) {
-        return pushStr(b64Encode(num) + tag);
+    function pushHeader(tag, num) {
+        const b64Bytes = [];
+        while (num > 0) {
+            b64Bytes.unshift(encodeB64Byte(num & 63));
+            num = Math.floor(num / 64);
+        }
+        b64Bytes.push(tag);
+        return push(new Uint8Array(b64Bytes));
     }
-    function pushContainer(written, tag) {
-        return written + pushStr(b64Encode(written) + tag);
+    function pushContainerHeader(tag, written) {
+        return written + pushHeader(tag, written);
     }
     function encodeAny(value) {
         // If the value is a known primitive or object, encode it as a pointer
@@ -69,7 +121,7 @@ export function encode(rootValue, knownValues = []) {
             }
         }
         if (typeof known === "number")
-            return pushInline(known, "&");
+            return pushHeader(KNOWN, known);
         // If the value has been seen before and a pointer is
         // cheaper than encoding it again, encode it as a pointer
         let seen = seenPrimitives.get(value);
@@ -78,7 +130,7 @@ export function encode(rootValue, knownValues = []) {
             const dist = size - seenOffset;
             const pointerCost = sizeNeeded(dist) + 1;
             if (pointerCost < cost)
-                return pushInline(dist, "*");
+                return pushHeader(SEEN, dist);
         }
         // Encode the value and record how expensive it was to write
         const written = encodeAnyInner(value);
@@ -107,26 +159,26 @@ export function encode(rootValue, knownValues = []) {
         return push(NULL);
     }
     function encodeString(value) {
-        return pushContainer(pushStr(value), "$");
+        return pushContainerHeader(STRING, pushStr(value));
     }
     function encodeNumber(value) {
         if (Number.isInteger(value)) {
             if (value >= 0) {
-                return pushInline(value, "+");
+                return pushHeader(POSINT, value);
             }
-            return pushInline(-1 - value, "~");
+            return pushHeader(NEGINT, -1 - value);
         }
         if (value > 0 && value < 2.3e13) {
             const percent = Math.round(value * 100);
             if (Math.abs(percent - value * 100) < 1e-15) {
-                return pushInline(percent, "%");
+                return pushHeader(PERCENT, percent);
             }
             const degree = Math.round(value * 360);
             if (Math.abs(degree - value * 360) < 1e-15) {
-                return pushInline(degree, "@");
+                return pushHeader(DEGREE, degree);
             }
         }
-        return pushContainer(pushStr(value.toString()), ".");
+        return pushHeader(FLOAT, castFloatToInt(value));
     }
     function encodeObject(value) {
         const start = size;
@@ -141,7 +193,7 @@ export function encode(rootValue, knownValues = []) {
         const end = size;
         if (written !== end - start)
             throw new Error("Size mismatch");
-        return pushContainer(written, ";");
+        return pushContainerHeader(MAP, written);
     }
     function encodeList(value) {
         const start = size;
@@ -163,35 +215,23 @@ export function encode(rootValue, knownValues = []) {
                 pushStr(b64Encode(end - offsets[i]).padStart(width, "A"));
             }
             pushStr(`${b64Encode(width)}:${b64Encode(count)}:`);
-            return pushContainer(size - start, "#");
+            return pushContainerHeader(ARRAY, size - start);
         }
-        return pushContainer(written, ":");
+        return pushContainerHeader(LIST, written);
     }
 }
-const primitiveTags = {
-    "+": "positive",
-    "~": "negative",
-    "!": "false",
-    "^": "true",
-    "?": "null",
-    "*": "seen",
-    "&": "known",
-    "@": "degree",
-    "%": "percent",
-};
-function b64Value(b) {
-    if (b >= 65 && b <= 90)
-        return b - 65; // A-Z
-    if (b >= 97 && b <= 122)
-        return b - 71; // a-z
-    if (b >= 48 && b <= 57)
-        return b + 4; // 0-9
-    if (b === 45)
-        return 62; // -
-    if (b === 95)
-        return 63; // _
-    return -1;
-}
+const primitiveTags = new Set([
+    POSINT,
+    NEGINT,
+    DEGREE,
+    PERCENT,
+    FLOAT,
+    FALSE[0],
+    TRUE[0],
+    NULL[0],
+    KNOWN,
+    SEEN,
+]);
 /**
  * Given an encoded string and known values shared between encoder and decoder,
  * return the value that was encoded.
@@ -200,32 +240,27 @@ function b64Value(b) {
  */
 export function decode(encoded, knownValues = []) {
     // Convert to UTF-8 form so the byte offsets make sense
-    console.time("parse");
     const buffer = utf8Encoder.encode(encoded);
     // Record offset as we go through the buffer
     let offset = 0;
     // Start decoding at the root
     return decodePart();
-    /**
-     * Consume b64 characters and return as string
-     */
-    function parseB64() {
-        const s = offset;
+    function parseHeader() {
         let num = 0;
         let b;
-        while ((b = b64Value(buffer[offset])) >= 0) {
+        while ((b = decodeB64Byte(buffer[offset])) >= 0) {
             num = num * 64 + b;
             offset++;
         }
-        return num;
+        const tag = buffer[offset++];
+        return [tag, num];
     }
     /**
      * Consume one value as cheaply as possible by only moving offset.
      */
     function skip() {
-        const num = parseB64();
-        const tag = String.fromCharCode(buffer[offset++]);
-        if (!primitiveTags[tag]) {
+        const [tag, num] = parseHeader();
+        if (!primitiveTags.has(tag)) {
             offset += num;
         }
     }
@@ -234,43 +269,40 @@ export function decode(encoded, knownValues = []) {
      * Note: offset is implicitly modified.
      */
     function decodePart() {
-        const bstart = offset;
-        const num = parseB64();
-        const bend = offset;
-        const tag = String.fromCharCode(buffer[offset++]);
+        const [tag, num] = parseHeader();
         // Decode the value based on the tag
-        if (tag === "*")
+        if (tag === SEEN)
             return decodePointer(num);
-        if (tag === "&")
+        if (tag === KNOWN)
             return knownValues[num];
-        if (tag === "+")
+        if (tag === POSINT)
             return num;
-        if (tag === "~")
+        if (tag === NEGINT)
             return -1 - num;
-        if (tag === "@")
-            return num / 360;
-        if (tag === "%")
+        if (tag === PERCENT)
             return num / 100;
-        if (tag === "^")
+        if (tag === DEGREE)
+            return num / 360;
+        if (tag === FLOAT)
+            return castIntToFloat(num);
+        if (tag === TRUE[0])
             return true;
-        if (tag === "!")
+        if (tag === FALSE[0])
             return false;
-        if (tag === "?")
+        if (tag === NULL[0])
             return null;
         // All other types are length-prefixed containers of some kind
         const start = offset;
         const end = offset + num;
         let val;
-        if (tag === ";")
+        if (tag === MAP)
             val = wrapObject(start, end);
-        else if (tag === ":")
+        else if (tag === LIST)
             val = wrapList(start, end);
-        else if (tag === "#")
+        else if (tag === ARRAY)
             val = wrapArray(start, end);
-        else if (tag === "$")
+        else if (tag === STRING)
             val = stringSlice(start, end);
-        else if (tag === ".")
-            val = parseFloat(stringSlice(start, end));
         else
             throw new Error("Unknown or invalid tag: " + tag);
         offset = end;
