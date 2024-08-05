@@ -4,6 +4,7 @@ let utf8Encoder = new TextEncoder();
 const POSINT = "+".charCodeAt(0);
 const NEGINT = "~".charCodeAt(0);
 const STRING = "$".charCodeAt(0);
+const BYTES = "=".charCodeAt(0); // Consider https://github.com/qntm/base32768
 const MAP = ";".charCodeAt(0);
 const LIST = ":".charCodeAt(0);
 const ARRAY = "#".charCodeAt(0);
