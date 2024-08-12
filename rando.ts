@@ -55,21 +55,12 @@ export function encode(
   rootValue: unknown,
   knownValues: unknown[] = []
 ): string {
-  // Array of byte arrays to be combined into a single byte array
-  const parts: Uint8Array[] = [];
-
-  // A running total of the bytes in parts
-  let size = 0;
-
   // Values that have been seen before, and the offset and cost of encoding them.
   const seenPrimitives = new Map<unknown, [number, number]>();
-
   // Strings and Numbers from `knownValues` and their offset index.
   const knownPrimitives = new Map<unknown, number>();
-
   // Objects and Arrays from `knownValues` and their offset index.
   const knownObjects = new Map<unknown, number>();
-
   // Create quick lookup maps for known values
   for (let i = 0, l = knownValues.length; i < l; i++) {
     const value = knownValues[i];
@@ -82,7 +73,14 @@ export function encode(
     }
   }
 
+  // Array of byte arrays to be combined into a single byte array
+  const parts: Uint8Array[] = [];
+  // A running total of the bytes in parts
+  let size = 0;
+  // Do the actual encoding
+
   const written = encodeAny(rootValue);
+  // Merge all the parts into a single byte array
   if (written !== size) throw new Error("Size mismatch");
   const buffer = new Uint8Array(size);
   let offset = 0;
@@ -91,7 +89,10 @@ export function encode(
     buffer.set(part, offset);
     offset += part.byteLength;
   }
+  // Return as a JavaScript string
   return utf8decoder.decode(buffer);
+
+  /////////////////////////////////////////////////////////////////////////////
 
   function push(value: Uint8Array): number {
     parts.push(value);
