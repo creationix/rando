@@ -116,13 +116,9 @@ const defaults = {
   knownValues: [],
 };
 
-export function findStringSegments(
-  rootVal: any,
-  chainMinChars?: number,
-  chainSplitter?: RegExp
-) {
-  chainMinChars = chainMinChars ?? defaults.chainMinChars;
-  chainSplitter = chainSplitter ?? defaults.chainSplitter;
+export function findStringSegments(rootVal: any, options: EncodeOptions = {}) {
+  const chainMinChars = options.chainMinChars ?? defaults.chainMinChars;
+  const chainSplitter = options.chainSplitter ?? defaults.chainSplitter;
   const counts: { [val: string]: number } = {};
   walk(rootVal);
   return counts;
@@ -200,11 +196,7 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   const chainSplitter = options.chainSplitter ?? defaults.chainSplitter;
   const prettyPrint = options.prettyPrint ?? defaults.prettyPrint;
   const knownValues = options.knownValues ?? defaults.knownValues;
-  let expectedSegments = findStringSegments(
-    rootVal,
-    chainMinChars,
-    chainSplitter
-  );
+  let expectedSegments = findStringSegments(rootVal, options);
   const parts: Uint8Array[] = [];
   let offset = 0;
   let depth = 0;

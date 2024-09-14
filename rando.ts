@@ -1,3 +1,6 @@
+// Set this to true or false on an array to force a particular behavior.
+export const IS_INDEXED = Symbol("IS_INDEXED");
+
 let utf8decoder = new TextDecoder();
 let utf8Encoder = new TextEncoder();
 
@@ -5,6 +8,7 @@ const POSINT = "+".charCodeAt(0);
 const NEGINT = "~".charCodeAt(0);
 const STRING = "$".charCodeAt(0);
 const BYTES = "=".charCodeAt(0); // Consider https://github.com/qntm/base32768
+const STRING_CHAIN = "'".charCodeAt(0);
 const MAP = ";".charCodeAt(0);
 const LIST = ":".charCodeAt(0);
 const ARRAY = "#".charCodeAt(0);
@@ -17,16 +21,16 @@ const NULL = new Uint8Array(["?".charCodeAt(0)]);
 const TRUE = new Uint8Array(["^".charCodeAt(0)]);
 const FALSE = new Uint8Array(["!".charCodeAt(0)]);
 
-const converter = new DataView(new ArrayBuffer(4));
+const converter = new DataView(new ArrayBuffer(8));
 
-function castFloatToInt(num: number): number {
-  converter.setFloat32(0, num, true);
-  return converter.getUint32(0, true);
+function castFloatToInt(num: number): bigint {
+  converter.setFloat64(0, num, true);
+  return converter.getBigUint64(0, true);
 }
 
-function castIntToFloat(num: number): number {
-  converter.setUint32(0, num, true);
-  return converter.getFloat32(0, true);
+function castIntToFloat(num: bigint): number {
+  converter.setBigUint64(0, num, true);
+  return converter.getFloat64(0, true);
 }
 
 function decodeB64Byte(byte: number): number {
@@ -47,14 +51,24 @@ function encodeB64Byte(num: number): number {
   return -1;
 }
 
+interface EncodeOptions {
+  knownValues?: any[];
+  stringSplitter?: RegExp;
+  stringNoSplit?: RegExp;
+}
+
 /**
  * Given a value and optional list of known values shared between encoder and decoder,
  * return a string representation of the value.
  */
 export function encode(
   rootValue: unknown,
-  knownValues: unknown[] = []
+  options: EncodeOptions = {}
 ): string {
+  const knownValues = options.knownValues ?? [];
+  const stringSplitter = options.stringSplitter;
+  const stringNoSplit = options.stringNoSplit;
+
   // Values that have been seen before, and the offset and cost of encoding them.
   const seenPrimitives = new Map<unknown, [number, number]>();
   // Strings and Numbers from `knownValues` and their offset index.
@@ -166,6 +180,16 @@ export function encode(
   }
 
   function encodeString(value: string): number {
+    if (stringSplitter && !(stringNoSplit && stringNoSplit.test(value))) {
+      const parts = value.split(stringSplitter).filter(Boolean);
+      if (parts.length > 1) {
+        let written = 0;
+        for (let i = parts.length - 1; i >= 0; --i) {
+          written += encodeAny(parts[i]);
+        }
+        return pushContainerHeader(STRING_CHAIN, written);
+      }
+    }
     return pushContainerHeader(STRING, pushStr(value));
   }
 
@@ -203,11 +227,11 @@ export function encode(
     if (written !== end - start) throw new Error("Size mismatch");
     return pushContainerHeader(MAP, written);
   }
-
-  function encodeList(value: unknown[]): number {
+  function encodeList(value) {
     const start = size;
     let written = 0;
-    const indexed = value.length > 100;
+    const indexed =
+      IS_INDEXED in value ? value[IS_INDEXED] : value.length >= 128;
     const offsets: number[] = [];
     for (let i = value.length - 1; i >= 0; --i) {
       const valueSize = encodeAny(value[i]);
@@ -227,8 +251,8 @@ export function encode(
     }
     return pushContainerHeader(LIST, written);
   }
+  cv;
 }
-
 const primitiveTags = new Set<number>([
   POSINT,
   NEGINT,
@@ -255,18 +279,18 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
   let offset = 0;
   // Start decoding at the root
   return decodePart();
-
-  function parseHeader(): [number, number] {
+  function parseHeader(): [number, number, bigint] {
     let num = 0;
+    let bignum = 0n;
     let b: number;
     while ((b = decodeB64Byte(buffer[offset])) >= 0) {
       num = num * 64 + b;
+      bignum = bignum * 64n + BigInt(b);
       offset++;
     }
     const tag = buffer[offset++];
-    return [tag, num];
+    return [tag, num, bignum];
   }
-
   /**
    * Consume one value as cheaply as possible by only moving offset.
    */
@@ -276,13 +300,12 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
       offset += num;
     }
   }
-
   /**
    * Return the next value in the stream.
    * Note: offset is implicitly modified.
    */
-  function decodePart(): unknown {
-    const [tag, num] = parseHeader();
+  function decodePart() {
+    const [tag, num, bignum] = parseHeader();
 
     // Decode the value based on the tag
     if (tag === SEEN) return decodePointer(num);
@@ -291,15 +314,14 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     if (tag === NEGINT) return -1 - num;
     if (tag === PERCENT) return num / 100;
     if (tag === DEGREE) return num / 360;
-    if (tag === FLOAT) return castIntToFloat(num);
+    if (tag === FLOAT) return castIntToFloat(bignum);
     if (tag === TRUE[0]) return true;
     if (tag === FALSE[0]) return false;
     if (tag === NULL[0]) return null;
-
     // All other types are length-prefixed containers of some kind
     const start = offset;
     const end = offset + num;
-    let val: unknown;
+    let val: object | string | any[];
     if (tag === MAP) val = wrapObject(start, end);
     else if (tag === LIST) val = wrapList(start, end);
     else if (tag === ARRAY) val = wrapArray(start, end);
@@ -308,23 +330,20 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     offset = end;
     return val;
   }
-
-  function stringSlice(start: number, end: number): string {
+  function stringSlice(start, end) {
     return utf8decoder.decode(buffer.subarray(start, end));
   }
-
-  function decodePointer(dist: number): unknown {
+  function decodePointer(dist) {
     const saved = offset;
     offset += dist;
     const seen = decodePart();
     offset = saved;
     return seen;
   }
-
   /**
    * Lazy object wrapper that decodes keys eagerly but values lazily.
    */
-  function wrapObject(start: number, end: number): object {
+  function wrapObject(start, end) {
     const obj = {};
     offset = start;
     while (offset < end) {
@@ -334,12 +353,11 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     }
     return obj;
   }
-
   /**
    * Lazy array wrapper that decodes offsets eagerly but values lazily.
    */
-  function wrapList(start: number, end: number): unknown[] {
-    const arr = [];
+  function wrapList(start, end) {
+    const arr: any[] = [];
     let index = 0;
     offset = start;
     while (offset < end) {
@@ -349,11 +367,10 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     }
     return arr;
   }
-
   /**
    * Lazy array wrapper that decodes offsets eagerly but values lazily.
    */
-  function wrapArray(start: number, end: number): unknown[] {
+  function wrapArray(start, end) {
     const width = parseB64();
     if (String.fromCharCode(buffer[offset++]) !== ":") {
       throw new Error("Missing index ':'");
@@ -364,8 +381,7 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     }
     const indexStart = offset;
     const indexEnd = indexStart + width * count;
-
-    const arr: unknown[] = [];
+    const arr = [];
     return new Proxy(arr, {
       get(target, property) {
         if (property === "length") {
@@ -395,11 +411,7 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
    * Define the property with a getter that decodes the value
    * and replaces the getter with a value on first access.
    */
-  function magicGetter(
-    obj: object | unknown[],
-    key: PropertyKey,
-    valueOffset: number
-  ): void {
+  function magicGetter(obj, key, valueOffset) {
     Object.defineProperty(obj, key, {
       get() {
         const savedOffset = offset;
@@ -419,11 +431,9 @@ export function decode(encoded: string, knownValues: unknown[] = []): any {
     });
   }
 }
-
 const chars =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-
-function b64Encode(num: number): string {
+function b64Encode(num) {
   let str = "";
   while (num > 0) {
     str = chars[num % 64] + str;
@@ -431,13 +441,11 @@ function b64Encode(num: number): string {
   }
   return str;
 }
-
-function sizeNeeded(num: number): number {
+function sizeNeeded(num) {
   if (num === 0) return 0;
   return Math.floor(Math.log(num) / Math.log(64) + 1);
 }
-
-function sameShape(a: unknown, b: unknown): boolean {
+function sameShape(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   if (Array.isArray(a)) {
@@ -458,41 +466,4 @@ function sameShape(a: unknown, b: unknown): boolean {
     return true;
   }
   return false;
-}
-
-const values = [
-  0,
-  1,
-  10,
-  100,
-  1000,
-  -1,
-  -10,
-  -100,
-  -1000,
-  1 / 30,
-  0.13,
-  3.14159,
-  true,
-  false,
-  null,
-  "",
-  "Banana",
-  "Hi, World",
-  "🍌",
-  [1, 2, 3],
-  [100, 100, 100],
-  { a: 1, b: 2, c: 3 },
-  [{ name: "Alice" }, { name: "Bob" }],
-];
-console.log(`| JSON       | Rando      |`);
-console.log(`| ----------:|:---------- |`);
-for (const v of values) {
-  console.log(
-    `| ${("`" + JSON.stringify(v) + "`").padStart(20, " ")} | ${(
-      "`" +
-      encode(v) +
-      "`"
-    ).padEnd(20, " ")} |`
-  );
 }
