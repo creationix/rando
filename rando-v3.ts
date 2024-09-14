@@ -1,12 +1,10 @@
 // Inline values
-const TRUE = "!";
-const FALSE = "~";
 const NULL = "?";
+const FALSE = "~";
+const TRUE = "!";
 const REF = "&"; // Reference to shared known value by offset index
 const PTR = "*"; // Reference to inline value by byte offset from end of value
 const INTEGER = "+"; // zigzag(N)
-const DEGREE = "@"; // zigzag(N * 360)
-const PERCENT = "%"; // zigzag(N * 100)
 const RATIONAL = "/"; // Rational number as zigzag(num)|dem
 const DECIMAL = "."; // Decimal (base 10 exponent) number as zigzag(base)|zigzag(exp)
 // Separator for multiple parts (used by RATIONAL and DECIMAL)
@@ -19,7 +17,6 @@ const DECIMAL = "."; // Decimal (base 10 exponent) number as zigzag(base)|zigzag
 const SEP = "|";
 
 // Byte Container Types
-const B64STR = "'"; // base64 number as string
 const STRING = "$"; // Contains UTF-8 encoded string bytes
 const BYTES = "="; // Contains RAW bytes as BASE64URL encoded string
 const CHAIN = ","; // String, bytes, or regexp broken into pieces
@@ -254,11 +251,6 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   }
 
   function encodeNumber(val: number) {
-    // Encode integers as zigzag
-    if (Number.isSafeInteger(val)) {
-      return pushHeader(INTEGER, encodeZigZag(BigInt(val)));
-    }
-
     if (val === Infinity) {
       return pushHeaderPair(RATIONAL, 2, 0);
     } else if (val === -Infinity) {
@@ -267,69 +259,48 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       return pushHeaderPair(RATIONAL, 0, 0);
     }
 
-    const absVal = Math.abs(val);
+    const parts = splitDecimal(val);
+    // console.log({ val, parts });
 
-    if (absVal > 1e-3 && absVal < 1e7) {
-      // Optimize small fractions that are multiples of 1/100
-      if (isNearlyWhole(val * 100)) {
-        const degree = Math.round(val * 100);
-        if (Number.isSafeInteger(degree)) {
-          return pushHeader(PERCENT, encodeZigZag(BigInt(degree)));
-        }
-      }
-      // Optimize small fractions that are multiples of 1/360
-      if (isNearlyWhole(val * 360)) {
-        const degree = Math.round(val * 360);
-        if (Number.isSafeInteger(degree)) {
-          return pushHeader(DEGREE, encodeZigZag(BigInt(degree)));
-        }
-      }
+    // Encode integers as zigzag
+    if (parts.exp >= 0 && parts.exp <= 3 && Number.isSafeInteger(val)) {
+      return pushHeader(INTEGER, encodeZigZag(BigInt(val)));
     }
 
-    // There are many options to encode floating point numbers
-    // Let's collect all valid options and choose the best one.
-    const options: { tag: string; a: bigint; b: bigint }[] = [];
-
-    if (absVal > 1e-5 && absVal < 1e6) {
+    // Try to encode using rational when base is large and exp is negative
+    // The goal is to detect repeating decimals that are actually rationals.
+    if ((parts.base <= -1000000n || parts.base >= 1000000n) && parts.exp < 0) {
       // Encode rational numbers as two integers
       const { numerator, denominator } = continuedFractionApproximation(val);
       if (
-        Number.isSafeInteger(numerator) &&
-        Number.isSafeInteger(denominator)
+        numerator != 0 &&
+        numerator < 1e9 &&
+        numerator > -1e9 &&
+        denominator > 0 &&
+        denominator < 1e9
       ) {
+        // console.log({ numerator, denominator });
         const mul = numerator / denominator;
-        if (Math.abs(mul - val) < 1e-9) {
-          options.push({
-            tag: RATIONAL,
-            a: encodeZigZag(BigInt(numerator)),
-            b: BigInt(denominator),
-          });
+        if (Math.abs(mul - val) < 1e-12) {
+          return pushHeaderPair(
+            RATIONAL,
+            encodeZigZag(BigInt(numerator)),
+            denominator
+          );
         }
       }
     }
 
     // Fallthrough that encodes as decimal floating point
-    const parts = splitDecimal(val);
-    options.push({
-      tag: DECIMAL,
-      a: encodeZigZag(parts.base),
-      b: encodeZigZag(BigInt(parts.exp)),
-    });
-
-    options.sort((a, b) => sizeNeeded(a) - sizeNeeded(b));
-    const { tag, a, b } = options[0];
-    return pushHeaderPair(tag, a, b);
+    return pushHeaderPair(
+      DECIMAL,
+      encodeZigZag(BigInt(parts.base)),
+      encodeZigZag(BigInt(parts.exp))
+    );
   }
 
   function encodeString(val: string) {
     const body = new TextEncoder().encode(val);
-    if (/^[a-zA-Z0-9-_]*$/.test(val)) {
-      const bytes = [...body, B64STR.charCodeAt(0)];
-      if (prettyPrint) {
-        injectWhitespace(bytes, depth);
-      }
-      return pushRaw(new Uint8Array(bytes));
-    }
     if (val.length >= chainMinChars) {
       const segments = val.split(chainSplitter).filter(Boolean);
       // combine segments that aren't expected to be reusable
