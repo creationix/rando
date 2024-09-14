@@ -12,7 +12,7 @@ const DECIMAL = "."; // Decimal (base 10 exponent) number as zigzag(base)|zigzag
 //   B64(zigzag(1)) "|" B64(3) "/"
 // And 12.34 as decimal would be encoded as:
 //   B64(zigzag(1234)) "|" B64(zigzag(2)) "."
-// Separator is the one case in the grammar where
+// Separator is one case in the grammar where
 // multiple b64 values are required to skip a frame.
 const SEP = "|";
 
@@ -32,6 +32,13 @@ const MAP = ":"; // Multiple key-value pairs
 // The `size` would include everything after the `#`, thus
 // this is not an exception to the grammar, but a normal frame.
 const INDEXED = "#";
+const LINK = "@"; // Symlink to another document
+// Tagged value, the next value is part of the tag
+// For example a string can be tagged
+//     B64(tag) "%" B64(size) "$" data
+// Tag is the other place in the grammar where multiple
+// b64 values are required to skip a frame.
+const TAG = "%";
 
 // URL Safe Base64
 const BASE64_CHARS =
