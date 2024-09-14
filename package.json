@@ -19,5 +19,8 @@
     "lazy"
   ],
   "author": "Tim Caswell",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@types/bun": "^1.1.9"
+  }
 }
