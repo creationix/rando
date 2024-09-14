@@ -1,15 +1,6 @@
-import { encode, findStringSegments } from "./rando-v3.ts";
+import { encodeB64, encode, findStringSegments } from "./rando-v3.ts";
 
-const data = await Promise.all([
-  // Bun.file("data.json").json(),
-  Bun.file("data2.json").json(),
-  // Bun.file("data3.json").json(),
-  // Bun.file("data4.json").json(),
-  // Bun.file("data5.json").json(),
-  // Bun.file("data6.json").json(),
-]);
-
-for (let i = 0; i < 1024; i++) {
+for (let i = 0; i < 100; i++) {
   let n: number;
   console.log(i, String.fromCharCode(...encode(i)));
   console.log(-1 - i, String.fromCharCode(...encode(-1 - i)));
@@ -50,6 +41,15 @@ for (let i = 0; i < 1024; i++) {
   n = Math.pow(10, Math.random() * 200 - 100);
   console.log(n, String.fromCharCode(...encode(n)));
 }
+
+const data = await Promise.all([
+  // Bun.file("data.json").json(),
+  // Bun.file("data2.json").json(),
+  Bun.file("data3.json").json(),
+  // Bun.file("data4.json").json(),
+  // Bun.file("data6.json").json(),
+  // Bun.file("data5.json").json(),
+]);
 
 // const splitters = [
 //   /([^a-zA-Z0-9-_ ]*[a-zA-Z0-9-_ ]+)/,
@@ -114,10 +114,6 @@ for (let i = 0; i < 1024; i++) {
 // summary.sort((a, b) => a[0] - b[0]);
 // console.log(summary);
 
-const json = new TextEncoder().encode(JSON.stringify(data));
-Bun.write("output.json", json);
-console.log("JSON", json.length);
-
 // const chainMinChars = 40;
 // const chainSplitter = /(\/+[^/]+)/;
 
@@ -126,16 +122,21 @@ const options = {
   // chainMinChars: 10,
 };
 // Generate a good set of known strings for testing
-let segments = findStringSegments(data, options);
-const knownValues = Object.entries(segments)
-  .filter(([k]) => k.length > 2)
-  .sort((a, b) => b[1] - a[1])
-  .map(([k]) => k)
-  .slice(0, 63);
-console.log(knownValues);
-options.knownValues = knownValues;
+// let segments = findStringSegments(data, options);
+// const knownValues = Object.entries(segments)
+//   .filter(([k]) => k.length > 2)
+//   .sort((a, b) => b[1] - a[1])
+//   .map(([k]) => k)
+//   .slice(0, 63);
+// console.log(knownValues);
+// options.knownValues = knownValues;
 
-const bytes = encode(data, options);
+const json = new TextEncoder().encode(JSON.stringify(data));
+Bun.write("output.json", json);
+console.log("JSON", json.length);
+let bytes = encode(data, options);
 Bun.write("output.rando-v3", bytes);
-const output = new TextDecoder().decode(bytes);
-console.log("Rando-V3", output.length);
+console.log("Rando-V3", bytes.length);
+bytes = encode(data, { ...options, binaryHeaders: true });
+Bun.write("output.rando-v3-binary", bytes);
+console.log("Rando-V3 Binary", bytes.length);

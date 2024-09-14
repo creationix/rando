@@ -32,22 +32,33 @@ const MAP = ":"; // Multiple key-value pairs
 // The `size` would include everything after the `#`, thus
 // this is not an exception to the grammar, but a normal frame.
 const INDEXED = "#";
-const LINK = "@"; // Symlink to another document
-// Tagged value, the next value is part of the tag
-// For example a string can be tagged
-//     B64(tag) "%" B64(size) "$" data
-// Tag is the other place in the grammar where multiple
-// b64 values are required to skip a frame.
-const TAG = "%";
+
+const binaryTypes = {
+  [NULL]: 0,
+  [FALSE]: 1,
+  [TRUE]: 2,
+  [REF]: 3,
+  [PTR]: 4,
+  [INTEGER]: 5,
+  [RATIONAL]: 6,
+  [DECIMAL]: 7,
+  [SEP]: 8,
+  [STRING]: 9,
+  [BYTES]: 10,
+  [CHAIN]: 11,
+  [LIST]: 12,
+  [MAP]: 13,
+  [INDEXED]: 14,
+};
 
 // URL Safe Base64
 const BASE64_CHARS =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 
 // When encoding variable integers using the B64 chars, they are encoded in little endian
 // This means that the first character is the least significant digit.
 // This is the opposite of the normal big endian encoding of numbers.
-function encodeB64(num: bigint | number): number[] {
+export function encodeB64(num: bigint | number): number[] {
   const bytes: number[] = [];
   if (typeof num === "bigint") {
     while (num > 0n) {
@@ -65,6 +76,7 @@ function encodeB64(num: bigint | number): number[] {
       num = Math.floor(num / 64);
     }
   }
+  bytes.reverse();
   return bytes;
 }
 
@@ -109,6 +121,7 @@ interface EncodeOptions {
   chainSplitter?: RegExp;
   prettyPrint?: boolean;
   knownValues?: any[];
+  binaryHeaders?: boolean;
 }
 
 const defaults = {
@@ -118,6 +131,7 @@ const defaults = {
   chainSplitter: /([^a-zA-Z0-9 _-]*[a-zA-Z0-9 _-]+)/,
   prettyPrint: false,
   knownValues: [],
+  binaryHeaders: false,
 };
 
 export function findStringSegments(rootVal: any, options: EncodeOptions = {}) {
@@ -180,12 +194,14 @@ function continuedFractionApproximation(
   return { numerator, denominator, coefficients };
 }
 
-// Number of base64 digits needed to encode number
-function b64SizeNeeded(num: number): number {
-  return Math.ceil(Math.log2(num) / Math.log2(64));
-}
-function sizeNeeded(option: { tag: string; a: bigint; b: bigint }) {
-  return b64SizeNeeded(Number(option.a)) + b64SizeNeeded(Number(option.b)) + 2;
+function encodeLEB128(num: bigint): number[] {
+  const bytes: number[] = [];
+  while (num >= 0x80n) {
+    bytes.push(Number(num & 0x7fn) | 0x80);
+    num /= 128n;
+  }
+  bytes.push(Number(num));
+  return bytes;
 }
 
 function injectWhitespace(bytes: number[], depth: number) {
@@ -200,6 +216,7 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   const chainSplitter = options.chainSplitter ?? defaults.chainSplitter;
   const prettyPrint = options.prettyPrint ?? defaults.prettyPrint;
   const knownValues = options.knownValues ?? defaults.knownValues;
+  const binaryHeaders = options.binaryHeaders ?? defaults.binaryHeaders;
   let expectedSegments = findStringSegments(rootVal, options);
   const parts: Uint8Array[] = [];
   let offset = 0;
@@ -234,7 +251,16 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     offset += value.byteLength;
   }
 
+  function formHeaderBinary(type: string, value: number | bigint) {
+    const num = BigInt(value) * 16n + BigInt(binaryTypes[type]);
+    return pushRaw(new Uint8Array(encodeLEB128(num)));
+  }
+
   function pushHeader(type: string, value: number | bigint) {
+    if (binaryHeaders) {
+      const bytes = formHeaderBinary(type, value);
+      return pushRaw(new Uint8Array(bytes));
+    }
     const bytes = encodeB64(value);
     bytes.push(type.charCodeAt(0));
     if (prettyPrint) {
@@ -248,13 +274,8 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     value1: number | bigint,
     value2: number | bigint
   ) {
-    const b1 = encodeB64(value1);
-    const b2 = encodeB64(value2);
-    const bytes = [...b1, SEP.charCodeAt(0), ...b2, type.charCodeAt(0)];
-    if (prettyPrint) {
-      injectWhitespace(bytes, depth);
-    }
-    return pushRaw(new Uint8Array(bytes));
+    pushHeader(type, value2);
+    return pushHeader(SEP, value1);
   }
 
   function encodeNumber(val: number) {
@@ -365,7 +386,9 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       // console.log("SEEN", val, seen.get(val));
       const s = seen.get(val)!;
       const dist = offset - s.offset;
-      const cost = b64SizeNeeded(dist) + 1;
+      const cost = binaryHeaders
+        ? Math.ceil(Math.log2(dist) / Math.log2(128))
+        : Math.ceil(Math.log2(dist) / Math.log2(64)) + 1;
       if (cost < s.written) {
         return pushHeader(PTR, dist);
       }
