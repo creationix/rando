@@ -104,6 +104,7 @@ interface EncodeOptions {
   chainMinChars?: number;
   chainSplitter?: RegExp;
   prettyPrint?: boolean;
+  knownValues?: any[];
 }
 
 const defaults = {
@@ -112,20 +113,27 @@ const defaults = {
   chainMinChars: 8,
   chainSplitter: /([^a-zA-Z0-9 _-]*[a-zA-Z0-9 _-]+)/,
   prettyPrint: false,
+  knownValues: [],
 };
 
-function findStringSegments(
+export function findStringSegments(
   rootVal: any,
-  chainMinChars: number,
-  chainSplitter: RegExp
+  chainMinChars?: number,
+  chainSplitter?: RegExp
 ) {
+  chainMinChars = chainMinChars ?? defaults.chainMinChars;
+  chainSplitter = chainSplitter ?? defaults.chainSplitter;
   const counts: { [val: string]: number } = {};
   walk(rootVal);
   return counts;
   function walk(val: any) {
-    if (typeof val === "string" && val.length >= chainMinChars) {
-      for (const segment of val.split(chainSplitter).filter(Boolean)) {
-        counts[segment] = (counts[segment] ?? 0) + 1;
+    if (typeof val === "string") {
+      if (val.length < chainMinChars) {
+        counts[val] = (counts[val] ?? 0) + 1;
+      } else {
+        for (const segment of val.split(chainSplitter).filter(Boolean)) {
+          counts[segment] = (counts[segment] ?? 0) + 1;
+        }
       }
     } else if (Array.isArray(val)) {
       for (const item of val) {
@@ -191,21 +199,29 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   const chainMinChars = options.chainMinChars ?? defaults.chainMinChars;
   const chainSplitter = options.chainSplitter ?? defaults.chainSplitter;
   const prettyPrint = options.prettyPrint ?? defaults.prettyPrint;
+  const knownValues = options.knownValues ?? defaults.knownValues;
   let expectedSegments = findStringSegments(
     rootVal,
     chainMinChars,
     chainSplitter
   );
-  const entries = Object.entries(expectedSegments)
-    .filter((a) => a[1] > 1 && a[0].length > chainMinChars)
-    .sort((a, b) => a[1] - b[1]);
-  expectedSegments = Object.fromEntries(entries);
-  // console.log(expectedSegments);
-  // throw "up";
   const parts: Uint8Array[] = [];
   let offset = 0;
   let depth = 0;
   const seen = new Map<any, { offset: number; written: number }>();
+  const known = new Map<any, number>();
+  const entries = Object.entries(expectedSegments)
+    .filter((a) => a[1] > 1 && a[0].length > chainMinChars)
+    .sort((a, b) => a[1] - b[1]);
+  expectedSegments = Object.fromEntries(entries);
+  for (let i = 0; i < knownValues.length; i++) {
+    const value = knownValues[i];
+    if (typeof value === "string") {
+      expectedSegments[value] = Infinity;
+    }
+    known.set(value, i);
+  }
+
   encodeAny(rootVal);
   const bytes = new Uint8Array(offset);
   offset = 0;
@@ -372,6 +388,9 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   }
 
   function encodeAny(val: unknown): void {
+    if (known.has(val)) {
+      return pushHeader(REF, known.get(val)!);
+    }
     if (seen.has(val)) {
       // console.log("SEEN", val, seen.get(val));
       const s = seen.get(val)!;

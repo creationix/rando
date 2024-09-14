@@ -1,12 +1,12 @@
-import { encode } from "./rando-v3.ts";
+import { encode, findStringSegments } from "./rando-v3.ts";
 
 const data = await Promise.all([
   Bun.file("data.json").json(),
-  // Bun.file("data2.json").json(),
-  // Bun.file("data3.json").json(),
-  // Bun.file("data4.json").json(),
-  // Bun.file("data5.json").json(),
-  // Bun.file("data6.json").json(),
+  Bun.file("data2.json").json(),
+  Bun.file("data3.json").json(),
+  Bun.file("data4.json").json(),
+  Bun.file("data5.json").json(),
+  Bun.file("data6.json").json(),
 ]);
 // const splitters = [
 //   /([^a-zA-Z0-9-_ ]*[a-zA-Z0-9-_ ]+)/,
@@ -74,7 +74,20 @@ const data = await Promise.all([
 const json = new TextEncoder().encode(JSON.stringify(data));
 Bun.write("output.json", json);
 console.log("JSON", json.length);
-const bytes = encode(data);
+
+// const chainMinChars = 40;
+// const chainSplitter = /(\/+[^/]+)/;
+
+// Generate a good set of known strings for testing
+let segments = findStringSegments(data);
+const knownValues = Object.entries(segments)
+  .filter(([k]) => k.length > 2)
+  .sort((a, b) => b[1] - a[1])
+  .map(([k]) => k)
+  .slice(0, 63);
+console.log(knownValues);
+
+const bytes = encode(data, { knownValues });
 Bun.write("output.rando-v3", bytes);
 const output = new TextDecoder().decode(bytes);
 console.log("Rando-V3", output.length);
