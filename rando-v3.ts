@@ -1,110 +1,347 @@
-// Primary types (4-bits)
-const INTEGER = "+"; // zigzag(N)
-const DEGREE = "@"; // zigzag(N * 360)
-const FLOAT = "."; // *(*uint64_t)(&N) (cast to integer)
+// Inline values
 const TRUE = "!";
 const FALSE = "~";
 const NULL = "?";
 const REF = "&"; // Reference to shared known value by offset index
 const PTR = "*"; // Reference to inline value by byte offset from end of value
-const TIME = ","; // Unix timestamp in ms
+const INTEGER = "+"; // zigzag(N)
+const DEGREE = "@"; // zigzag(N * 360)
+const PERCENT = "%"; // zigzag(N * 100)
+const RATIONAL = "/"; // Rational number as zigzag(num)|dem
+const DECIMAL = "."; // Decimal (base 10 exponent) number as zigzag(base)|zigzag(exp)
+// Separator for multiple parts (used by RATIONAL and DECIMAL)
+// For example, 1/3 would be encoded as:
+//   B64(zigzag(1)) "|" B64(3) "/"
+// And 12.34 as decimal would be encoded as:
+//   B64(zigzag(1234)) "|" B64(zigzag(2)) "."
+// Separator is the one case in the grammar where
+// multiple b64 values are required to skip a frame.
+const SEP = "|";
+
+// Byte Container Types
 const B64STR = "'"; // base64 number as string
 const STRING = "$"; // Contains UTF-8 encoded string bytes
 const BYTES = "="; // Contains RAW bytes as BASE64URL encoded string
-const REGEXP = "^"; // regexp pattern as string
-const CHAIN = "/"; // String, bytes, or regexp broken into pieces
+const CHAIN = ","; // String, bytes, or regexp broken into pieces
+
+// Recursive Container Types
 const LIST = ";"; // Multiple values in sequence
 const MAP = ":"; // Multiple key-value pairs
-const INDEX = "#"; // ARRAY or TRIE with inline index
-const LINK = "("; // link to external resource
-const TAG = ")"; // Tagged value
+// Indexed containers:
+//   O(n) LIST become O(1) ARRAY
+//   O(n) MAP becomes O(log n) TRIE
+// For example an indexed LIST (aka an ARRAY) would be encoded as:
+//   B64(size) "#" B64(count) "|" B64(width) ";" index ...values
+// The `size` would include everything after the `#`, thus
+// this is not an exception to the grammar, but a normal frame.
+const INDEXED = "#";
 
 // URL Safe Base64
 const BASE64_CHARS =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+// When encoding variable integers using the B64 chars, they are encoded in little endian
+// This means that the first character is the least significant digit.
+// This is the opposite of the normal big endian encoding of numbers.
+function encodeB64(num: bigint | number): number[] {
+  const bytes: number[] = [];
+  if (typeof num === "bigint") {
+    while (num > 0n) {
+      bytes.push(BASE64_CHARS.charCodeAt(Number(num % 64n)));
+      num /= 64n;
+    }
+  } else if (num < 2 ** 32) {
+    while (num > 0) {
+      bytes.push(BASE64_CHARS.charCodeAt(num & 0x3f));
+      num = num >>> 6;
+    }
+  } else {
+    while (num > 0) {
+      bytes.push(BASE64_CHARS.charCodeAt(num % 64));
+      num = Math.floor(num / 64);
+    }
+  }
+  return bytes;
+}
+
 function encodeZigZag(num: bigint): bigint {
   return num >= 0n ? num * 2n : -1n - num * 2n;
 }
 
-// Used to convert between f64 and u64
-const converter = new DataView(new ArrayBuffer(8));
-function encodeFloat(num: number): bigint {
-  converter.setFloat64(0, num);
-  return converter.getBigUint64(0);
+// Split a float into signed integer parts of base and exponent base 10
+// This uses the built-in string conversion to get the parts
+function splitDecimal(val: number) {
+  const str = val.toString();
+  // Count decimal or trailing zeroes or e-notation to get exponent
+  const m = str.match(
+    /^(?<whole>[+-]?\d+?)(?<zeroes>0*)(?:\.(?<part>\d+))?(?:[eE](?<epow>[+-]?\d+))?$/
+  );
+  if (!m) {
+    console.log({ val, str });
+    throw new Error("Invalid float");
+  }
+  const { whole, zeroes, part, epow } = m.groups!;
+  const power = part ? part.length : zeroes ? -zeroes.length : 0;
+  let base: bigint;
+  let exp: number;
+  if (part) {
+    base = BigInt(whole + (zeroes ?? "") + part);
+    exp = -part.length;
+  } else if (zeroes) {
+    base = BigInt(whole);
+    exp = zeroes.length;
+  } else {
+    base = BigInt(whole);
+    exp = 0;
+  }
+  if (epow) {
+    exp += parseInt(epow);
+  }
+  return { base, exp };
 }
 
-function encode(rootVal: any, options = {}) {
+interface EncodeOptions {
+  chainMinChars?: number;
+  chainSplitter?: RegExp;
+  prettyPrint?: boolean;
+}
+
+const defaults = {
+  // Chain defaults were found by brute forcing all combinations on several datasets
+  // But they can be adjusted for specific data for fine tuning.
+  chainMinChars: 8,
+  chainSplitter: /([^a-zA-Z0-9 _-]*[a-zA-Z0-9 _-]+)/,
+  prettyPrint: false,
+};
+
+function findStringSegments(
+  rootVal: any,
+  chainMinChars: number,
+  chainSplitter: RegExp
+) {
+  const counts: { [val: string]: number } = {};
+  walk(rootVal);
+  return counts;
+  function walk(val: any) {
+    if (typeof val === "string" && val.length >= chainMinChars) {
+      for (const segment of val.split(chainSplitter).filter(Boolean)) {
+        counts[segment] = (counts[segment] ?? 0) + 1;
+      }
+    } else if (Array.isArray(val)) {
+      for (const item of val) {
+        walk(item);
+      }
+    } else if (val && typeof val === "object") {
+      for (const [k, v] of Object.entries(val)) {
+        walk(k);
+        walk(v);
+      }
+    }
+  }
+}
+
+// Appriximate a number as a continued fraction
+// This is used to encode floating point numbers as rational numbers
+function continuedFractionApproximation(
+  num: number,
+  maxIterations = 50,
+  tolerance = 1e-9
+) {
+  const sign = num < 0 ? -1 : 1;
+  num = Math.abs(num);
+  let coefficients: number[] = [];
+  let integerPart = Math.floor(num);
+  let fractionalPart = num - integerPart;
+  coefficients.push(integerPart);
+  let iterations = 0;
+  while (fractionalPart > tolerance && iterations < maxIterations) {
+    let reciprocal = 1 / fractionalPart;
+    let nextIntPart = Math.floor(reciprocal);
+    coefficients.push(nextIntPart);
+    fractionalPart = reciprocal - nextIntPart;
+    iterations++;
+  }
+  let numerator = 1;
+  let denominator = 0;
+  for (let i = coefficients.length - 1; i >= 0; i--) {
+    let temp = numerator;
+    numerator = coefficients[i] * numerator + denominator;
+    denominator = temp;
+  }
+  numerator *= sign;
+  return { numerator, denominator, coefficients };
+}
+
+// Number of base64 digits needed to encode number
+function b64SizeNeeded(num: number): number {
+  return Math.ceil(Math.log2(num) / Math.log2(64));
+}
+function sizeNeeded(option: { tag: string; a: bigint; b: bigint }) {
+  return b64SizeNeeded(Number(option.a)) + b64SizeNeeded(Number(option.b)) + 2;
+}
+
+function injectWhitespace(bytes: number[], depth: number) {
+  for (let i = 0; i < depth; i++) {
+    bytes.unshift(" ".charCodeAt(0));
+  }
+  if (depth) bytes.unshift("\n".charCodeAt(0));
+}
+
+export function encode(rootVal: any, options: EncodeOptions = {}) {
+  const chainMinChars = options.chainMinChars ?? defaults.chainMinChars;
+  const chainSplitter = options.chainSplitter ?? defaults.chainSplitter;
+  const prettyPrint = options.prettyPrint ?? defaults.prettyPrint;
+  let expectedSegments = findStringSegments(
+    rootVal,
+    chainMinChars,
+    chainSplitter
+  );
+  const entries = Object.entries(expectedSegments)
+    .filter((a) => a[1] > 1 && a[0].length > chainMinChars)
+    .sort((a, b) => a[1] - b[1]);
+  expectedSegments = Object.fromEntries(entries);
+  // console.log(expectedSegments);
+  // throw "up";
   const parts: Uint8Array[] = [];
-  let size = 0;
-  const seen = new Map<any, number>();
-  encodeAny(rootVal);
-  const bytes = new Uint8Array(size);
   let offset = 0;
+  let depth = 0;
+  const seen = new Map<any, { offset: number; written: number }>();
+  encodeAny(rootVal);
+  const bytes = new Uint8Array(offset);
+  offset = 0;
   for (let i = parts.length - 1; i >= 0; i--) {
     const part = parts[i];
     bytes.set(part, offset);
     offset += part.byteLength;
   }
+
   return bytes;
 
   function pushRaw(value: Uint8Array) {
     parts.push(value);
-    return (size += value.byteLength);
+    offset += value.byteLength;
   }
 
   function pushHeader(type: string, value: number | bigint) {
-    const bytes: number[] = [];
-    if (typeof value === "bigint") {
-      while (value > 0n) {
-        bytes.push(BASE64_CHARS.charCodeAt(Number(value % 64n)));
-        value /= 64n;
-      }
-    } else if (value < 2 ** 32) {
-      while (value > 0) {
-        bytes.push(BASE64_CHARS.charCodeAt(value & 0x3f));
-        value = value >>> 6;
-      }
-    } else {
-      while (value > 0) {
-        bytes.push(BASE64_CHARS.charCodeAt(value % 64));
-        value = Math.floor(value / 64);
-      }
-    }
+    const bytes = encodeB64(value);
     bytes.push(type.charCodeAt(0));
+    if (prettyPrint) {
+      injectWhitespace(bytes, depth);
+    }
+    return pushRaw(new Uint8Array(bytes));
+  }
+
+  function pushHeaderPair(
+    type: string,
+    value1: number | bigint,
+    value2: number | bigint
+  ) {
+    const b1 = encodeB64(value1);
+    const b2 = encodeB64(value2);
+    const bytes = [...b1, SEP.charCodeAt(0), ...b2, type.charCodeAt(0)];
+    if (prettyPrint) {
+      injectWhitespace(bytes, depth);
+    }
     return pushRaw(new Uint8Array(bytes));
   }
 
   function encodeNumber(val: number) {
+    // Encode integers as zigzag
     if (Number.isSafeInteger(val)) {
       return pushHeader(INTEGER, encodeZigZag(BigInt(val)));
     }
-    if (isNearlyWhole(val * 360)) {
-      const degree = Math.round(val * 360);
-      if (Number.isSafeInteger(degree)) {
-        return pushHeader(DEGREE, encodeZigZag(BigInt(degree)));
+
+    if (val === Infinity) {
+      return pushHeaderPair(RATIONAL, 2, 0);
+    } else if (val === -Infinity) {
+      return pushHeaderPair(RATIONAL, 1, 0);
+    } else if (Number.isNaN(val)) {
+      return pushHeaderPair(RATIONAL, 0, 0);
+    }
+
+    const absVal = Math.abs(val);
+
+    if (absVal > 1e-3 && absVal < 1e7) {
+      // Optimize small fractions that are multiples of 1/100
+      if (isNearlyWhole(val * 100)) {
+        const degree = Math.round(val * 100);
+        if (Number.isSafeInteger(degree)) {
+          return pushHeader(PERCENT, encodeZigZag(BigInt(degree)));
+        }
+      }
+      // Optimize small fractions that are multiples of 1/360
+      if (isNearlyWhole(val * 360)) {
+        const degree = Math.round(val * 360);
+        if (Number.isSafeInteger(degree)) {
+          return pushHeader(DEGREE, encodeZigZag(BigInt(degree)));
+        }
       }
     }
-    return pushHeader(FLOAT, encodeFloat(val));
+
+    // There are many options to encode floating point numbers
+    // Let's collect all valid options and choose the best one.
+    const options: { tag: string; a: bigint; b: bigint }[] = [];
+
+    if (absVal > 1e-5 && absVal < 1e6) {
+      // Encode rational numbers as two integers
+      const { numerator, denominator } = continuedFractionApproximation(val);
+      if (
+        Number.isSafeInteger(numerator) &&
+        Number.isSafeInteger(denominator)
+      ) {
+        const mul = numerator / denominator;
+        if (Math.abs(mul - val) < 1e-9) {
+          options.push({
+            tag: RATIONAL,
+            a: encodeZigZag(BigInt(numerator)),
+            b: BigInt(denominator),
+          });
+        }
+      }
+    }
+
+    // Fallthrough that encodes as decimal floating point
+    const parts = splitDecimal(val);
+    options.push({
+      tag: DECIMAL,
+      a: encodeZigZag(parts.base),
+      b: encodeZigZag(BigInt(parts.exp)),
+    });
+
+    options.sort((a, b) => sizeNeeded(a) - sizeNeeded(b));
+    const { tag, a, b } = options[0];
+    return pushHeaderPair(tag, a, b);
   }
 
   function encodeString(val: string) {
     const body = new TextEncoder().encode(val);
     if (/^[a-zA-Z0-9-_]*$/.test(val)) {
-      pushRaw(new Uint8Array([B64STR.charCodeAt(0)]));
-      return pushRaw(body) + 1;
+      const bytes = [...body, B64STR.charCodeAt(0)];
+      if (prettyPrint) {
+        injectWhitespace(bytes, depth);
+      }
+      return pushRaw(new Uint8Array(bytes));
     }
-    if (val.length > 20) {
-      const segments = val
-        .split(/([^a-zA-Z0-9]*[a-zA-Z0-9-_]+)/)
-        .filter(Boolean);
-      if (segments.length > 3) {
-        console.log(segments);
-        let length = 0;
-        for (let i = segments.length - 1; i >= 0; i--) {
-          length += encodeAny(segments[i]);
+    if (val.length >= chainMinChars) {
+      const segments = val.split(chainSplitter).filter(Boolean);
+      // combine segments that aren't expected to be reusable
+      for (let i = segments.length - 1; i > 0; i--) {
+        let exp = expectedSegments[segments[i]];
+        let pexp = expectedSegments[segments[i - 1]];
+        if (exp == undefined && pexp == undefined) {
+          segments.splice(i - 1, 2, segments[i - 1] + segments[i]);
         }
-        return pushHeader(CHAIN, length) + length;
+      }
+
+      if (segments.length > 1) {
+        depth++;
+        const before = offset;
+        for (let i = segments.length - 1; i >= 0; i--) {
+          const segment = segments[i];
+          encodeAny(segment);
+        }
+        depth--;
+        return pushHeader(CHAIN, offset - before);
       }
     }
     pushRaw(body);
@@ -112,36 +349,48 @@ function encode(rootVal: any, options = {}) {
   }
 
   function encodeList(val: any[]) {
-    let size = 0;
+    depth++;
+    const before = offset;
     for (let i = val.length - 1; i >= 0; i--) {
-      size += encodeAny(val[i]);
+      encodeAny(val[i]);
     }
-    return pushHeader(LIST, size) + size;
+    depth--;
+    return pushHeader(LIST, offset - before);
   }
 
   function encodeMap(val: Record<string, any>) {
-    let size = 0;
+    depth++;
+    const before = offset;
     const entries = Object.entries(val);
     for (let i = entries.length - 1; i >= 0; i--) {
       const [key, value] = entries[i];
-      size += encodeAny(value);
-      size += encodeAny(key);
+      encodeAny(value);
+      encodeAny(key);
     }
-    return pushHeader(MAP, size) + size;
+    depth--;
+    return pushHeader(MAP, offset - before);
   }
 
-  function encodeAny(val: unknown): number {
+  function encodeAny(val: unknown): void {
     if (seen.has(val)) {
-      return pushHeader(PTR, size - seen.get(val)!);
+      // console.log("SEEN", val, seen.get(val));
+      const s = seen.get(val)!;
+      const dist = offset - s.offset;
+      const cost = b64SizeNeeded(dist) + 1;
+      if (cost < s.written) {
+        return pushHeader(PTR, dist);
+      }
     }
-    const written = encodeAnyInner(val);
-    if (written > 4) {
-      seen.set(val, size);
+    const before = offset;
+    encodeAnyInner(val);
+    const written = offset - before;
+    if (val && typeof val !== "object" && written >= 3) {
+      // console.log("STORE", val, written);
+      seen.set(val, { offset, written });
     }
-    return written;
   }
 
-  function encodeAnyInner(val: unknown): number {
+  function encodeAnyInner(val: unknown): void {
     if (typeof val === "string") {
       return encodeString(val);
     }
@@ -162,7 +411,7 @@ function encode(rootVal: any, options = {}) {
     }
     if (val instanceof Uint8Array) {
       pushRaw(val);
-      return pushHeader(BYTES, val.byteLength) + val.byteLength;
+      return pushHeader(BYTES, val.byteLength);
     }
     if (val instanceof RegExp) {
       throw new Error("TODO: Implement regexp encoding");
@@ -184,23 +433,3 @@ function encode(rootVal: any, options = {}) {
 function isNearlyWhole(val: number) {
   return Math.abs(val - Math.round(val)) < 1e-9;
 }
-
-const data = await Bun.file("data.json").json();
-const bytes = encode(data);
-const output = new TextDecoder().decode(bytes);
-console.log(output.length);
-
-// for (let i = 0; i < 1024; i++) {
-//   console.log(i, String.fromCharCode(...encodeAnyValue(i)));
-//   console.log(-1 - i, String.fromCharCode(...encodeAnyValue(-1 - i)));
-//   console.log(
-//     (i + 1) / 360,
-//     String.fromCharCode(...encodeAnyValue((i + 1) / 360))
-//   );
-//   console.log(
-//     (i + 1) / 100,
-//     String.fromCharCode(...encodeAnyValue((i + 1) / 100))
-//   );
-//   let n = Math.floor(Math.random() * 3600 * 2 - 3600) / 3600;
-//   console.log(n, String.fromCharCode(...encodeAnyValue(n)));
-// }
