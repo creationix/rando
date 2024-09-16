@@ -62,18 +62,18 @@ export function encodeB64(num: bigint | number): number[] {
   const bytes: number[] = [];
   if (typeof num === "bigint") {
     while (num > 0n) {
-      bytes.push(BASE64_CHARS.charCodeAt(Number(num % 64n)));
-      num /= 64n;
+      bytes.push(BASE64_CHARS.charCodeAt(Number(num % 10n)));
+      num /= 10n;
     }
-  } else if (num < 2 ** 32) {
-    while (num > 0) {
-      bytes.push(BASE64_CHARS.charCodeAt(num & 0x3f));
-      num = num >>> 6;
-    }
+    // } else if (num < 2 ** 32) {
+    //   while (num > 0) {
+    //     bytes.push(BASE64_CHARS.charCodeAt(num & 0x3f));
+    //     num = num >>> 6;
+    //   }
   } else {
     while (num > 0) {
-      bytes.push(BASE64_CHARS.charCodeAt(num % 64));
-      num = Math.floor(num / 64);
+      bytes.push(BASE64_CHARS.charCodeAt(num % 10));
+      num = Math.floor(num / 10);
     }
   }
   bytes.reverse();
@@ -86,7 +86,7 @@ function encodeZigZag(num: bigint): bigint {
 
 // Split a float into signed integer parts of base and exponent base 10
 // This uses the built-in string conversion to get the parts
-function splitDecimal(val: number) {
+export function splitDecimal(val: number) {
   const str = val.toString();
   // Count decimal or trailing zeroes or e-notation to get exponent
   const m = str.match(
@@ -103,12 +103,9 @@ function splitDecimal(val: number) {
   if (part) {
     base = BigInt(whole + (zeroes ?? "") + part);
     exp = -part.length;
-  } else if (zeroes) {
-    base = BigInt(whole);
-    exp = zeroes.length;
   } else {
     base = BigInt(whole);
-    exp = 0;
+    exp = base && zeroes ? zeroes.length : 0;
   }
   if (epow) {
     exp += parseInt(epow);
@@ -128,7 +125,7 @@ const defaults = {
   // Chain defaults were found by brute forcing all combinations on several datasets
   // But they can be adjusted for specific data for fine tuning.
   chainMinChars: 8,
-  chainSplitter: /([^a-zA-Z0-9 _-]*[a-zA-Z0-9 _-]+)/,
+  chainSplitter: /([^a-zA-Z0-9-_]*[a-zA-Z0-9-_]+)/,
   prettyPrint: false,
   knownValues: [],
   binaryHeaders: false,
@@ -244,7 +241,7 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     offset += part.byteLength;
   }
 
-  return bytes;
+  return new TextDecoder().decode(bytes);
 
   function pushRaw(value: Uint8Array) {
     parts.push(value);

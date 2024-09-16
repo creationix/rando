@@ -2,16 +2,16 @@ import { encodeB64, encode, findStringSegments } from "./rando-v3.ts";
 
 for (let i = 0; i < 100; i++) {
   let n: number;
-  console.log(i, String.fromCharCode(...encode(i)));
-  console.log(-1 - i, String.fromCharCode(...encode(-1 - i)));
-  console.log((i + 1) / 360, String.fromCharCode(...encode((i + 1) / 360)));
-  console.log((i + 1) / 100, String.fromCharCode(...encode((i + 1) / 100)));
+  console.log(i, encode(i));
+  console.log(-1 - i, encode(-1 - i));
+  console.log((i + 1) / 360, encode((i + 1) / 360));
+  console.log((i + 1) / 100, encode((i + 1) / 100));
 
   // Test rational, these should generally look like xx|yy/
   n =
     Math.floor(Math.random() * 4096 - 2048) /
     Math.floor(Math.random() * 2048 + 1);
-  console.log(n, String.fromCharCode(...encode(n)));
+  console.log(n, encode(n));
 
   // Test small decimals, these should generally look like xx|y.
   n = parseFloat(
@@ -19,7 +19,7 @@ for (let i = 0; i < 100; i++) {
       Math.random() * 20 - 10
     )}`
   );
-  console.log(n, String.fromCharCode(...encode(n)));
+  console.log(n, encode(n));
 
   // Medium Decimals, these should generally look like xxx|yy.
   n = parseFloat(
@@ -27,7 +27,7 @@ for (let i = 0; i < 100; i++) {
       Math.random() * 200 - 100
     )}`
   );
-  console.log(n, String.fromCharCode(...encode(n)));
+  console.log(n, encode(n));
 
   // Tiny Decimals, these will often be integers, but should render as decimal
   n = parseFloat(
@@ -35,20 +35,20 @@ for (let i = 0; i < 100; i++) {
       Math.random() * 30 - 15
     )}`
   );
-  console.log(n, String.fromCharCode(...encode(n)));
+  console.log(n, encode(n));
 
   // Fully Random, these generally should not be rationals
   n = Math.pow(10, Math.random() * 200 - 100);
-  console.log(n, String.fromCharCode(...encode(n)));
+  console.log(n, encode(n));
 }
 
 const data = await Promise.all([
-  // Bun.file("data.json").json(),
-  // Bun.file("data2.json").json(),
+  Bun.file("data.json").json(),
+  Bun.file("data2.json").json(),
   Bun.file("data3.json").json(),
-  // Bun.file("data4.json").json(),
-  // Bun.file("data6.json").json(),
-  // Bun.file("data5.json").json(),
+  Bun.file("data4.json").json(),
+  Bun.file("data6.json").json(),
+  Bun.file("data5.json").json(),
 ]);
 
 // const splitters = [
@@ -113,9 +113,6 @@ const data = await Promise.all([
 
 // summary.sort((a, b) => a[0] - b[0]);
 // console.log(summary);
-
-// const chainMinChars = 40;
-// const chainSplitter = /(\/+[^/]+)/;
 
 const options = {
   prettyPrint: false,
