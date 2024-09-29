@@ -19,6 +19,30 @@ const FALSE = new Uint8Array(["!".charCodeAt(0)]);
 
 const converter = new DataView(new ArrayBuffer(4));
 
+// Encode a binary value to base64 text, but stored in a Uint8Array
+function base64EncodeBuffer(buffer: Uint8Array): Uint8Array {
+  const length = buffer.length;
+  const b64Length = Math.ceil((length * 8) / 6);
+  const b64Buffer = new Uint8Array(b64Length);
+  let b64Offset = 0;
+  let bufferOffset = 0;
+  let bits = 0;
+  let bitsLength = 0;
+  while (bufferOffset < length) {
+    bits |= buffer[bufferOffset++] << bitsLength;
+    bitsLength += 8;
+    while (bitsLength >= 6) {
+      b64Buffer[b64Offset++] = (bits & 63) + 65;
+      bits >>= 6;
+      bitsLength -= 6;
+    }
+  }
+  if (bitsLength > 0) {
+    b64Buffer[b64Offset++] = bits + 65;
+  }
+  return b64Buffer;
+}
+
 function castFloatToInt(num: number): number {
   converter.setFloat32(0, num, true);
   return converter.getUint32(0, true);
