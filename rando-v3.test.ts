@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { encode, encodeBinary, stringify, continuedFractionApproximation, encodeB64, decodeB64, splitDecimal } from "./rando-v3";
+import { type EncodeOptions, stringify, findStringSegments, continuedFractionApproximation, encodeB64, decodeB64, splitDecimal } from "./rando-v3";
 
 test("splitDecimal", () => {
   expect(splitDecimal(0.1)).toEqual([1n, -1]);
@@ -65,7 +65,7 @@ test("continuedFractionApproximation", () => {
   expect(continuedFractionApproximation(Math.PI, 4)).toEqual([103993, 33102]); // 3.1415926530119025
 })
 
-test("encode B64", () => {
+test("encode B64 digits", () => {
   expect(new TextDecoder().decode(new Uint8Array(encodeB64(0)))).toEqual("");
   expect(new TextDecoder().decode(new Uint8Array(encodeB64(1)))).toEqual("1");
   expect(new TextDecoder().decode(new Uint8Array(encodeB64(9)))).toEqual("9");
@@ -220,13 +220,133 @@ test("encode strings", () => {
   expect(stringify(" ".repeat(1000))).toEqual("fE$" + " ".repeat(1000));
 })
 
-// TODO: this is wrong, the body should base64 encoded instead of raw bytes
 test("encode bytes", () => {
   expect(stringify(new Uint8Array([]))).toEqual("=");
   expect(stringify(new Uint8Array([0]))).toEqual("2=AA");
   expect(stringify(new Uint8Array([0, 0]))).toEqual("3=AAA");
   expect(stringify(new Uint8Array([0, 0, 0]))).toEqual("4=AAAA");
+  expect(stringify(new Uint8Array([0b00000100, 0b00100000, 0b11000100]))).toEqual("4=BCDE");
+  expect(stringify(new Uint8Array([0b00010000, 0b00110000, 0b10000001]))).toEqual("4=EDCB");
   expect(stringify(new Uint8Array([1, 2, 3, 4]))).toEqual("6=AQIDBA");
   expect(stringify(new Uint8Array(10).fill(32))).toEqual("e=ICAgICAgICAgIA");
+  expect(stringify(new Uint8Array(10).fill(127))).toEqual("e=f39_f39_f39_fw");
+  expect(stringify(new Uint8Array(1).fill(255))).toEqual("2=_w");
+  expect(stringify(new Uint8Array(2).fill(255))).toEqual("3=__8");
+  expect(stringify(new Uint8Array(3).fill(255))).toEqual("4=____");
+  expect(stringify(new Uint8Array(10).fill(255))).toEqual("e=_____________w");
+  expect(stringify(new Uint8Array(11).fill(255))).toEqual("f=______________8");
+  expect(stringify(new Uint8Array(12).fill(255))).toEqual("g=________________");
   expect(stringify(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32))).toEqual("6=ICAgIA");
+  expect(stringify(new Uint8Array([
+    104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106,
+    221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
+    197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122,
+    139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
+    183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226,
+    192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45, 87,
+    48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250,
+    12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90, 166,
+    242, 157, 87, 37
+  ]))).toEqual("26=aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ");
+});
+
+
+test("encode streaming bytes", () => {
+  const opts = { streamContainers: true };
+  expect(stringify(new Uint8Array([]), opts)).toEqual("<>");
+  expect(stringify(new Uint8Array([0]), opts)).toEqual("<AA>");
+  expect(stringify(new Uint8Array([0, 0]), opts)).toEqual("<AAA>");
+  expect(stringify(new Uint8Array([0, 0, 0]), opts)).toEqual("<AAAA>");
+  expect(stringify(new Uint8Array([0b00000100, 0b00100000, 0b11000100]), opts)).toEqual("<BCDE>");
+  expect(stringify(new Uint8Array([0b00010000, 0b00110000, 0b10000001]), opts)).toEqual("<EDCB>");
+  expect(stringify(new Uint8Array([1, 2, 3, 4]), opts)).toEqual("<AQIDBA>");
+  expect(stringify(new Uint8Array(10).fill(32), opts)).toEqual("<ICAgICAgICAgIA>");
+  expect(stringify(new Uint8Array(10).fill(127), opts)).toEqual("<f39_f39_f39_fw>");
+  expect(stringify(new Uint8Array(1).fill(255), opts)).toEqual("<_w>");
+  expect(stringify(new Uint8Array(2).fill(255), opts)).toEqual("<__8>");
+  expect(stringify(new Uint8Array(3).fill(255), opts)).toEqual("<____>");
+  expect(stringify(new Uint8Array(10).fill(255), opts)).toEqual("<_____________w>");
+  expect(stringify(new Uint8Array(11).fill(255), opts)).toEqual("<______________8>");
+  expect(stringify(new Uint8Array(12).fill(255), opts)).toEqual("<________________>");
+  expect(stringify(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32), opts)).toEqual("<ICAgIA>");
+  expect(stringify(new Uint8Array([
+    104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106,
+    221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
+    197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122,
+    139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
+    183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226,
+    192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45, 87,
+    48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250,
+    12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90, 166,
+    242, 157, 87, 37
+  ]), opts)).toEqual("<aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ>");
+});
+
+
+test("encode lists", () => {
+  expect(stringify([])).toEqual(";");
+  expect(stringify([0])).toEqual("1;+");
+  expect(stringify([0, true])).toEqual("2;+!");
+  expect(stringify([0, true, false])).toEqual("3;+!~");
+  expect(stringify([1, 2, 3])).toEqual("6;2+4+6+");
+  expect(stringify([[]])).toEqual("1;;");
+  expect(stringify([[[]]])).toEqual("3;1;;");
+})
+
+test("encode streaming lists", () => {
+  const opts = { streamContainers: true };
+  expect(stringify([], opts)).toEqual("[]");
+  expect(stringify([1, 2, 3], opts)).toEqual("[2+4+6+]");
+  expect(stringify([[]], opts)).toEqual("[[]]");
+  expect(stringify([[[]]], opts)).toEqual("[[[]]]");
+})
+
+test("encode objects", () => {
+  expect(stringify({})).toEqual(":");
+  expect(stringify({ a: 0 })).toEqual("4:1$a+");
+  expect(stringify({ a: 0, b: true })).toEqual("8:1$a+1$b!");
+  expect(stringify({ a: 0, b: true, c: {} })).toEqual("c:1$a+1$b!1$c:");
+});
+
+test("encode streaming objects", () => {
+  const opts = { streamContainers: true };
+  expect(stringify({}, opts)).toEqual("{}");
+  expect(stringify({ a: 0 }, opts)).toEqual("{1$a+}");
+  expect(stringify({ a: 0, b: true }, opts)).toEqual("{1$a+1$b!}");
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("{1$a+1$b!1$c{}}");
+});
+
+test("encode maps", () => {
+  expect(stringify(new Map())).toEqual(":");
+  expect(stringify(new Map([[1, 2]]))).toEqual("4:2+4+");
+  expect(stringify(new Map<unknown, unknown>([[1, 2], [true, false]]))).toEqual("6:2+4+!~");
+  expect(stringify(new Map<unknown, unknown>([[[], {}], [[1, 2, 3], null]]))).toEqual("b:;:6;2+4+6+?");
+});
+
+test("encode streaming maps", () => {
+  const opts = { streamContainers: true };
+  expect(stringify(new Map(), opts)).toEqual("{}");
+  expect(stringify(new Map([[1, 2]]), opts)).toEqual("{2+4+}");
+  expect(stringify(new Map<unknown, unknown>([[1, 2], [true, false]]), opts)).toEqual("{2+4+!~}");
+  expect(stringify(new Map<unknown, unknown>([[[], {}], [[1, 2, 3], null]]), opts)).toEqual("{[]{}[2+4+6+]?}");
+});
+
+test("findStringSegments", () => {
+  const opts = {
+    chainMinChars: 3,
+    chainSplitter: /(\/+)/,
+  }
+  expect(findStringSegments("foo/foo/foo", opts)).toEqual({ "/": 2, foo: 3 });
+  opts.chainSplitter = /([^a-zA-Z0-9-_]*[a-zA-Z0-9-_]+)/
+  expect(findStringSegments("foo/foo/foo", opts)).toEqual({ "/foo": 2, foo: 1 });
+});
+
+test("encode string chains", () => {
+  const opts: EncodeOptions = {
+    chainMinChars: 7,
+    chainSplitter: /([^a-zA-Z0-9-_]*[a-zA-Z0-9-_]+)/,
+  }
+  expect(stringify("/segment/segment/segment", opts)).toEqual("d,1**8$/segment");
+  opts.streamContainers = true;
+  expect(stringify("/segment/segment/segment", opts)).toEqual("(1**8$/segment)");
 });
