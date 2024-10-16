@@ -33,6 +33,12 @@ const MAP = ":"; // Multiple key-value pairs
 // this is not an exception to the grammar, but a normal frame.
 const INDEXED = "#";
 
+const LIST_BRACES = "[]";
+const MAP_BRACES = "{}";
+const CHAIN_BRACES = "()";
+const BYTES_BRACES = "<>";
+const STRING_BRACES = "''";
+
 const binaryTypes = {
   [NULL]: 0,
   [FALSE]: 1,
@@ -51,9 +57,32 @@ const binaryTypes = {
   [INDEXED]: 14,
 };
 
-// URL Safe Base64
-const BASE64_CHARS =
+// URL Safe Base64 ordered similar to decimal and hecadecimal
+// Used for digits of variable length integers.
+const BASE64_DIGITS =
   "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+// Normal URL Safe Base64 used for encoding of binary data
+const BASE64_CHARS =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+export function decodeB64(
+  buf: Uint8Array,
+  offset = 0,
+  end = buf.length,
+): [number | bigint, number] {
+  let num = 0n;
+  while (offset < end) {
+    const byte = buf[offset];
+    const index = BASE64_DIGITS.indexOf(String.fromCharCode(byte));
+    if (index < 0) break;
+    offset++;
+    num = num * 64n + BigInt(index);
+  }
+  if (Number.isSafeInteger(Number(num))) {
+    return [Number(num), offset];
+  }
+  return [num, offset];
+}
 
 // When encoding variable integers using the B64 chars, they are encoded in little endian
 // This means that the first character is the least significant digit.
@@ -62,18 +91,18 @@ export function encodeB64(num: bigint | number): number[] {
   const bytes: number[] = [];
   if (typeof num === "bigint") {
     while (num > 0n) {
-      bytes.push(BASE64_CHARS.charCodeAt(Number(num % 10n)));
-      num /= 10n;
+      bytes.push(BASE64_DIGITS.charCodeAt(Number(num % 64n)));
+      num /= 64n;
     }
-    // } else if (num < 2 ** 32) {
-    //   while (num > 0) {
-    //     bytes.push(BASE64_CHARS.charCodeAt(num & 0x3f));
-    //     num = num >>> 6;
-    //   }
+  } else if (num < 2 ** 32) {
+    while (num > 0) {
+      bytes.push(BASE64_DIGITS.charCodeAt(num & 63));
+      num = num >>> 6;
+    }
   } else {
     while (num > 0) {
-      bytes.push(BASE64_CHARS.charCodeAt(num % 10));
-      num = Math.floor(num / 10);
+      bytes.push(BASE64_DIGITS.charCodeAt(num % 64));
+      num = Math.floor(num / 64);
     }
   }
   bytes.reverse();
@@ -110,7 +139,7 @@ export function splitDecimal(val: number) {
   if (epow) {
     exp += parseInt(epow);
   }
-  return { base, exp };
+  return [base, exp];
 }
 
 interface EncodeOptions {
@@ -119,6 +148,7 @@ interface EncodeOptions {
   prettyPrint?: boolean;
   knownValues?: any[];
   binaryHeaders?: boolean;
+  streamContainers?: boolean;
 }
 
 const defaults = {
@@ -129,6 +159,7 @@ const defaults = {
   prettyPrint: false,
   knownValues: [],
   binaryHeaders: false,
+  streamContainers: false,
 };
 
 export function findStringSegments(rootVal: any, options: EncodeOptions = {}) {
@@ -161,7 +192,7 @@ export function findStringSegments(rootVal: any, options: EncodeOptions = {}) {
 
 // Appriximate a number as a continued fraction
 // This is used to encode floating point numbers as rational numbers
-function continuedFractionApproximation(
+export function continuedFractionApproximation(
   num: number,
   maxIterations = 50,
   tolerance = 1e-9
@@ -188,7 +219,7 @@ function continuedFractionApproximation(
     denominator = temp;
   }
   numerator *= sign;
-  return { numerator, denominator, coefficients };
+  return [numerator, denominator];
 }
 
 function encodeLEB128(num: bigint): number[] {
@@ -207,6 +238,18 @@ function injectWhitespace(bytes: number[], depth: number) {
   }
   if (depth) bytes.unshift("\n".charCodeAt(0));
 }
+export function encodeBinary(rootVal: any, options: EncodeOptions = {}) {
+  return encode(rootVal, {
+    ...options,
+    binaryHeaders: true,
+    prettyPrint: false,
+  });
+}
+export function stringify(rootVal: any, options: EncodeOptions = {}) {
+  return new TextDecoder().decode(
+    encode(rootVal, { ...options, binaryHeaders: false })
+  );
+}
 
 export function encode(rootVal: any, options: EncodeOptions = {}) {
   const chainMinChars = options.chainMinChars ?? defaults.chainMinChars;
@@ -214,6 +257,7 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   const prettyPrint = options.prettyPrint ?? defaults.prettyPrint;
   const knownValues = options.knownValues ?? defaults.knownValues;
   const binaryHeaders = options.binaryHeaders ?? defaults.binaryHeaders;
+  const streamContainers = options.streamContainers ?? defaults.streamContainers;
   let expectedSegments = findStringSegments(rootVal, options);
   const parts: Uint8Array[] = [];
   let offset = 0;
@@ -241,11 +285,35 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     offset += part.byteLength;
   }
 
-  return new TextDecoder().decode(bytes);
+  return bytes;
 
   function pushRaw(value: Uint8Array) {
     parts.push(value);
     offset += value.byteLength;
+  }
+
+  // Encode a binary value as url-safe base64
+  function pushBase64(value: Uint8Array) {
+    const output: number[] = [];
+    for (let i = 0, l = value.length; i < l;) {
+      const byte1 = value[i++];
+      output.push(BASE64_CHARS.charCodeAt(byte1 >> 2));
+      if (i >= l) {
+        output.push(BASE64_CHARS.charCodeAt((byte1 & 0x03) << 4));
+      } else {
+        const byte2 = value[i++];
+        output.push(BASE64_CHARS.charCodeAt(((byte1 & 0x03) << 4) | ((byte2 || 0) >> 4)));
+        if (i >= l) {
+          output.push(BASE64_CHARS.charCodeAt((byte2 & 0x0F) << 2));
+        } else {
+          const byte3 = value[i++];
+          output.push(BASE64_CHARS.charCodeAt(((byte2 & 0x0F) << 2) | ((byte3 || 0) >> 6)));
+          output.push(BASE64_CHARS.charCodeAt(byte3 & 0x3F));
+        }
+      }
+    }
+    parts.push(new Uint8Array(output));
+    offset += output.length;
   }
 
   function formHeaderBinary(type: string, value: number | bigint) {
@@ -255,8 +323,7 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
 
   function pushHeader(type: string, value: number | bigint) {
     if (binaryHeaders) {
-      const bytes = formHeaderBinary(type, value);
-      return pushRaw(new Uint8Array(bytes));
+      return formHeaderBinary(type, value);
     }
     const bytes = encodeB64(value);
     bytes.push(type.charCodeAt(0));
@@ -284,19 +351,19 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       return pushHeaderPair(RATIONAL, 0, 0);
     }
 
-    const parts = splitDecimal(val);
+    const [base, exp] = splitDecimal(val);
     // console.log({ val, parts });
 
     // Encode integers as zigzag
-    if (parts.exp >= 0 && parts.exp <= 3 && Number.isSafeInteger(val)) {
+    if (exp >= 0 && exp <= 3 && Number.isSafeInteger(val)) {
       return pushHeader(INTEGER, encodeZigZag(BigInt(val)));
     }
 
     // Try to encode using rational when base is large and exp is negative
     // The goal is to detect repeating decimals that are actually rationals.
-    if ((parts.base <= -1000000n || parts.base >= 1000000n) && parts.exp < 0) {
+    if ((base <= -1000000n || base >= 1000000n) && exp < 0) {
       // Encode rational numbers as two integers
-      const { numerator, denominator } = continuedFractionApproximation(val);
+      const [numerator, denominator] = continuedFractionApproximation(val);
       if (
         numerator != 0 &&
         numerator < 1e9 &&
@@ -319,8 +386,8 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     // Fallthrough that encodes as decimal floating point
     return pushHeaderPair(
       DECIMAL,
-      encodeZigZag(BigInt(parts.base)),
-      encodeZigZag(BigInt(parts.exp))
+      encodeZigZag(BigInt(base)),
+      encodeZigZag(BigInt(exp))
     );
   }
 
@@ -353,12 +420,18 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   }
 
   function encodeList(val: any[]) {
+    if (streamContainers) {
+      pushRaw(new Uint8Array([LIST_BRACES.charCodeAt(1)]));
+    }
     depth++;
     const before = offset;
     for (let i = val.length - 1; i >= 0; i--) {
       encodeAny(val[i]);
     }
     depth--;
+    if (streamContainers) {
+      return pushRaw(new Uint8Array([LIST_BRACES.charCodeAt(0)]));
+    }
     return pushHeader(LIST, offset - before);
   }
 
@@ -419,8 +492,9 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       return encodeList(val);
     }
     if (val instanceof Uint8Array) {
-      pushRaw(val);
-      return pushHeader(BYTES, val.byteLength);
+      const start = offset;
+      pushBase64(val);
+      return pushHeader(BYTES, offset - start);
     }
     if (val instanceof RegExp) {
       throw new Error("TODO: Implement regexp encoding");
