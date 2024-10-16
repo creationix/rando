@@ -37,7 +37,6 @@ const LIST_BRACES = "[]";
 const MAP_BRACES = "{}";
 const CHAIN_BRACES = "()";
 const BYTES_BRACES = "<>";
-const STRING_BRACES = "''";
 
 const binaryTypes = {
   [NULL]: 0,
@@ -142,7 +141,7 @@ export function splitDecimal(val: number) {
   return [base, exp];
 }
 
-interface EncodeOptions {
+export interface EncodeOptions {
   chainMinChars?: number;
   chainSplitter?: RegExp;
   prettyPrint?: boolean;
@@ -154,7 +153,7 @@ interface EncodeOptions {
 const defaults = {
   // Chain defaults were found by brute forcing all combinations on several datasets
   // But they can be adjusted for specific data for fine tuning.
-  chainMinChars: 8,
+  chainMinChars: 7,
   chainSplitter: /([^a-zA-Z0-9-_]*[a-zA-Z0-9-_]+)/,
   prettyPrint: false,
   knownValues: [],
@@ -265,7 +264,7 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
   const seen = new Map<any, { offset: number; written: number }>();
   const known = new Map<any, number>();
   const entries = Object.entries(expectedSegments)
-    .filter((a) => a[1] > 1 && a[0].length > chainMinChars)
+    .filter(([str, count]) => count > 1 && str.length >= chainMinChars)
     .sort((a, b) => a[1] - b[1]);
   expectedSegments = Object.fromEntries(entries);
   for (let i = 0; i < knownValues.length; i++) {
@@ -275,7 +274,6 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     }
     known.set(value, i);
   }
-
   encodeAny(rootVal);
   const bytes = new Uint8Array(offset);
   offset = 0;
@@ -405,6 +403,9 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       }
 
       if (segments.length > 1) {
+        if (streamContainers) {
+          pushRaw(new Uint8Array([CHAIN_BRACES.charCodeAt(1)]));
+        }
         depth++;
         const before = offset;
         for (let i = segments.length - 1; i >= 0; i--) {
@@ -412,6 +413,9 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
           encodeAny(segment);
         }
         depth--;
+        if (streamContainers) {
+          return pushRaw(new Uint8Array([CHAIN_BRACES.charCodeAt(0)]));
+        }
         return pushHeader(CHAIN, offset - before);
       }
     }
@@ -435,16 +439,28 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     return pushHeader(LIST, offset - before);
   }
 
-  function encodeMap(val: Record<string, any>) {
+  function encodeObject(val: Record<string, any>) {
+    if (val instanceof Map) {
+      return encodeEntries([...val.entries()]);
+    }
+    return encodeEntries(Object.entries(val));
+  }
+
+  function encodeEntries(entries: [any, any][]) {
+    if (streamContainers) {
+      pushRaw(new Uint8Array([MAP_BRACES.charCodeAt(1)]));
+    }
     depth++;
     const before = offset;
-    const entries = Object.entries(val);
     for (let i = entries.length - 1; i >= 0; i--) {
       const [key, value] = entries[i];
       encodeAny(value);
       encodeAny(key);
     }
     depth--;
+    if (streamContainers) {
+      return pushRaw(new Uint8Array([MAP_BRACES.charCodeAt(0)]));
+    }
     return pushHeader(MAP, offset - before);
   }
 
@@ -492,8 +508,14 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       return encodeList(val);
     }
     if (val instanceof Uint8Array) {
+      if (streamContainers) {
+        pushRaw(new Uint8Array([BYTES_BRACES.charCodeAt(1)]));
+      }
       const start = offset;
       pushBase64(val);
+      if (streamContainers) {
+        return pushRaw(new Uint8Array([BYTES_BRACES.charCodeAt(0)]));
+      }
       return pushHeader(BYTES, offset - start);
     }
     if (val instanceof RegExp) {
@@ -503,10 +525,11 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
       throw new Error("TODO: Implement date encoding");
     }
     if (typeof val === "object") {
-      return encodeMap(val);
+      return encodeObject(val);
     }
 
     console.log({ val });
     throw new TypeError("Unsupported value");
   }
 }
+
