@@ -316,14 +316,14 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     offset += output.length;
   }
 
-  function formHeaderBinary(type: string, value: number | bigint) {
+  function pushHeaderBinary(type: string, value: number | bigint) {
     const num = BigInt(value) * 16n + BigInt(binaryTypes[type]);
     return pushRaw(new Uint8Array(encodeLEB128(num)));
   }
 
   function pushHeader(type: string, value: number | bigint) {
     if (binaryHeaders) {
-      return formHeaderBinary(type, value);
+      return pushHeaderBinary(type, value);
     }
     const bytes = encodeB64(value);
     bytes.push(type.charCodeAt(0));
@@ -509,10 +509,4 @@ export function encode(rootVal: any, options: EncodeOptions = {}) {
     console.log({ val });
     throw new TypeError("Unsupported value");
   }
-}
-
-// Returns true if the value is nearly a whole number
-// This is used to encode floating point numbers as integers
-function isNearlyWhole(val: number) {
-  return Math.abs(val - Math.round(val)) < 1e-9;
 }
