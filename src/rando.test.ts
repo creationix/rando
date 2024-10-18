@@ -232,16 +232,31 @@ test('encode primitives', () => {
   expect(() => stringify(undefined)).toThrow()
 })
 
+test('encode b64 strings', () => {
+  expect(stringify('short')).toEqual("short'")
+  expect(stringify('Dash-it')).toEqual("Dash-it'")
+  expect(stringify('CAP_CASE')).toEqual("CAP_CASE'")
+  expect(stringify('1234')).toEqual("1234'")
+  // Leading zeros aren't supported
+  expect(stringify('01234')).toEqual('5$01234')
+  // strings longer than 8 chars aren't supported
+  expect(stringify('12345678')).toEqual("12345678'")
+  expect(stringify('123456789')).toEqual('9$123456789')
+  expect(stringify('ThisIsLong')).toEqual('a$ThisIsLong')
+})
+
 test('encode strings', () => {
   expect(stringify('')).toEqual('$')
-  expect(stringify('a')).toEqual('1$a')
-  expect(stringify('ab')).toEqual('2$ab')
-  expect(stringify('abc')).toEqual('3$abc')
+  expect(stringify(' ')).toEqual('1$ ')
+  expect(stringify('Hi!')).toEqual('3$Hi!')
+  expect(stringify('Goodbye.')).toEqual('8$Goodbye.')
+  expect(stringify('1 2 3')).toEqual('5$1 2 3')
+  expect(stringify('𐐡𐐰𐑌𐐼o')).toEqual('h$𐐡𐐰𐑌𐐼o')
+  expect(stringify('🚀🎲')).toEqual('8$🚀🎲')
   expect(stringify(' '.repeat(10))).toEqual(`a$${' '.repeat(10)}`)
   expect(stringify(' '.repeat(100))).toEqual(`1A$${' '.repeat(100)}`)
   expect(stringify(' '.repeat(1000))).toEqual(`fE$${' '.repeat(1000)}`)
 })
-
 test('encode bytes', () => {
   expect(stringify(new Uint8Array([]))).toEqual('=')
   expect(stringify(new Uint8Array([0]))).toEqual('2=AA')
@@ -328,17 +343,17 @@ test('encode streaming lists', () => {
 
 test('encode objects', () => {
   expect(stringify({})).toEqual(':')
-  expect(stringify({ a: 0 })).toEqual('4:1$a+')
-  expect(stringify({ a: 0, b: true })).toEqual('8:1$a+1$b!')
-  expect(stringify({ a: 0, b: true, c: {} })).toEqual('c:1$a+1$b!1$c:')
+  expect(stringify({ a: 0 })).toEqual("3:a'+")
+  expect(stringify({ a: 0, b: true })).toEqual("6:a'+b'!")
+  expect(stringify({ a: 0, b: true, c: {} })).toEqual("9:a'+b'!c':")
 })
 
 test('encode streaming objects', () => {
   const opts = { streamContainers: true }
   expect(stringify({}, opts)).toEqual('{}')
-  expect(stringify({ a: 0 }, opts)).toEqual('{1$a+}')
-  expect(stringify({ a: 0, b: true }, opts)).toEqual('{1$a+1$b!}')
-  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual('{1$a+1$b!1$c{}}')
+  expect(stringify({ a: 0 }, opts)).toEqual("{a'+}")
+  expect(stringify({ a: 0, b: true }, opts)).toEqual("{a'+b'!}")
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("{a'+b'!c'{}}")
 })
 
 test('encode maps', () => {
@@ -412,9 +427,7 @@ const fruit = [
 ]
 
 test('encode known values', () => {
-  expect(stringify(fruit)).toEqual(
-    '1m;p:G*3$redO*e;U*a$strawberryf:f*5$greenl*2;r*E:5$color6$yellow6$fruitsf;5$apple6$banana',
-  )
+  expect(stringify(fruit)).toEqual("1f;o:E*red'L*e;Q*a$strawberrye:e*green'j*2;o*z:color'yellow'fruits'd;apple'banana'")
   const options: EncodeOptions = {
     knownValues: [
       'color',
@@ -438,17 +451,17 @@ test('encode pretty-print', () => {
     prettyPrint: true,
   }
   expect(stringify({ int: 123, rational: 1 / 3, decimal: 1.23 }, options)).toEqual(
-    'J:\n 3$int 3S+\n 8$rational 2|3/\n 7$decimal 3S|3.',
+    "G:\n int' 3S+\n rational' 2|3/\n decimal' 3S|3.",
   )
-  expect(stringify({ bool: true, bool2: false, nil: null }, options)).toEqual('u:\n 4$bool !\n 5$bool2 ~\n 3$nil ?')
+  expect(stringify({ bool: true, bool2: false, nil: null }, options)).toEqual("r:\n bool' !\n bool2' ~\n nil' ?")
   expect(stringify({ obj: {}, arr: [], chain: 'repeat/repeat/repeat' }, options)).toEqual(
-    'M:\n 3$obj :\n 3$arr ;\n 5$chain i,6$repeat*7$/repeat',
+    "I:\n obj' :\n arr' ;\n chain' h,repeat'*7$/repeat",
   )
   expect(stringify({ string: 'Hello', bytes: new Uint8Array([1, 2, 3]) }, options)).toEqual(
-    'y:\n 6$string 5$Hello\n 5$bytes 4=AQID',
+    "v:\n string' Hello'\n bytes' 4=AQID",
   )
   expect(stringify(fruit, options)).toEqual(
-    '2b;\n I:\n  19* 3$red\n  1g* n;\n   1k*\n   a$strawberry\n r:\n  q* 5$green\n  w* 6;\n   B*\n U:\n  5$color 6$yellow\n  6$fruits n;\n   5$apple\n   6$banana',
+    "24;\n H:\n  17* red'\n  1d* n;\n   1g*\n   a$strawberry\n q:\n  p* green'\n  u* 6;\n   y*\n P:\n  color' yellow'\n  fruits' l;\n   apple'\n   banana'",
   )
 })
 
@@ -590,6 +603,21 @@ test('decode primitives', () => {
   expect(parse('!')).toEqual(true)
   expect(parse('~')).toEqual(false)
   expect(parse('?')).toBeNull()
+})
+
+test('decode b64 strings', () => {
+  expect(parse("short'")).toEqual('short')
+  expect(parse("Dash-it'")).toEqual('Dash-it')
+  expect(parse("CAP_CASE'")).toEqual('CAP_CASE')
+  expect(parse("1234'")).toEqual('1234')
+  expect(parse("12345'")).toEqual('12345')
+  expect(parse("123456'")).toEqual('123456')
+  expect(parse("1234567'")).toEqual('1234567')
+  expect(parse("12345678'")).toEqual('12345678')
+  // Decoder accepts leading zeroes and large strings even though the encoder doesn't
+  expect(parse("01234'")).toEqual('01234')
+  expect(parse("123456789'")).toEqual('123456789')
+  expect(parse("ThisIsLong'")).toEqual('ThisIsLong')
 })
 
 test('decode strings', () => {
@@ -761,13 +789,13 @@ test('encode README values', () => {
   expect(stringify(false)).toEqual('~')
   expect(stringify(null)).toEqual('?')
   expect(stringify('')).toEqual('$')
-  expect(stringify('Banana')).toEqual('6$Banana')
+  expect(stringify('Banana')).toEqual("Banana'")
   expect(stringify('Hi, World')).toEqual('9$Hi, World')
   expect(stringify('🍌')).toEqual('4$🍌')
   expect(stringify([1, 2, 3])).toEqual('6;2+4+6+')
   expect(stringify([100, 100, 100])).toEqual('6;1**38+')
-  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual('f:1$a2+1$b4+1$c6+')
-  expect(stringify([{ name: 'Alice' }, { name: 'Bob' }])).toEqual('o;9:9*5$Aliceb:4$name3$Bob')
+  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual("c:a'2+b'4+c'6+")
+  expect(stringify([{ name: 'Alice' }, { name: 'Bob' }])).toEqual("l;8:8*Alice'9:name'Bob'")
 
   const sampleDoc = {
     person: {
@@ -787,7 +815,7 @@ test('encode README values', () => {
 
   const encoded1 = stringify(sampleDoc)
   expect(encoded1).toEqual(
-    '1E:6$personK:4$name8$John Doe3$ageY+2$id61O+c$ai-generated!4$lista;2+4+6+8+a+6*q:c*f*6$nestedc:3$key5$value',
+    "1w:person'H:name'8$John Doeage'Y+id'61O+c$ai-generated!list'a;2+4+6+8+a+6*n:b*d*nested'a:key'value'",
   )
 
   const decoded1 = parse(encoded1)
@@ -867,6 +895,6 @@ test('pretty-print stream mode', () => {
   }
   const encoded = stringify(fruit, options)
   expect(encoded).toEqual(
-    '[\n {\n  1d* 3$red\n  1k* [\n   1o*\n   a$strawberry ] }\n {\n  s* 5$green\n  y* [\n   D* ] }\n {\n  5$color 6$yellow\n  6$fruits [\n   5$apple\n   6$banana ] } ]',
+    "[\n {\n  1b* red'\n  1h* [\n   1k*\n   a$strawberry ] }\n {\n  r* green'\n  w* [\n   A* ] }\n {\n  color' yellow'\n  fruits' [\n   apple'\n   banana' ] } ]",
   )
 })

@@ -17,6 +17,7 @@ const DECIMAL = '.' // Decimal (base 10 exponent) number as zigzag(base)|zigzag(
 const SEP = '|'
 
 // Byte Container Types
+const B64_STRING = "'" // base64 digits are the string itself
 const STRING = '$' // Contains UTF-8 encoded string bytes
 const BYTES = '=' // Contains RAW bytes as BASE64URL encoded string
 const CHAIN = ',' // String, bytes, or regexp broken into pieces
@@ -68,11 +69,6 @@ export function decodeB64(buf: Uint8Array, offset = 0, end = buf.length): [numbe
     const byte = buf[offset]
     const index = BASE64_DIGITS.indexOf(String.fromCharCode(byte))
     if (index < 0) {
-      // skip whitespace
-      if (byte === 32 || byte === 10 || byte === 13 || byte === 9) {
-        offset++
-        continue
-      }
       break
     }
     offset++
@@ -317,6 +313,9 @@ export function stringify(rootVal: unknown, options: EncodeOptions = {}) {
   return new TextDecoder().decode(encode(rootVal, { ...options, binaryHeaders: false }))
 }
 
+// Strings that are also b64 numbers within Number.MAX_SAFE_INTEGER
+const base64Str = /^[a-zA-Z1-9-_][a-zA-Z0-9-_]{0,7}$/
+
 export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   const chainMinChars = options.chainMinChars ?? defaults.chainMinChars
   const chainSplitter = options.chainSplitter ?? defaults.chainSplitter
@@ -405,8 +404,9 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     return pushRaw(new Uint8Array(bytes))
   }
 
-  function pushChar(char: string, trim = -1) {
-    const bytes = [char.charCodeAt(0)]
+  // Does not support utf-8 encoding of unicode chars for performance reasons
+  function pushChars(chars: string, trim = -1) {
+    const bytes = Array.prototype.map.call(chars, (b: string) => b.charCodeAt(0))
     if (prettyPrint) {
       if (trim < 0) {
         injectWhitespace(bytes, depth)
@@ -464,6 +464,9 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 
   function encodeString(val: string, trim = -1) {
+    if (!binaryHeaders && base64Str.test(val)) {
+      return pushChars(val + B64_STRING, trim)
+    }
     const body = new TextEncoder().encode(val)
     if (val.length >= chainMinChars) {
       const segments = val.split(chainSplitter).filter(Boolean)
@@ -478,7 +481,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
       if (segments.length > 1) {
         if (streamContainers) {
-          pushChar(CHAIN_BRACES[1], 0)
+          pushChars(CHAIN_BRACES[1], 0)
         }
         depth++
         const before = offset
@@ -488,7 +491,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
         }
         depth--
         if (streamContainers) {
-          return pushChar(CHAIN_BRACES[0], trim)
+          return pushChars(CHAIN_BRACES[0], trim)
         }
         return pushHeader(CHAIN, offset - before, trim)
       }
@@ -499,19 +502,19 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
   function encodeBinary(val: Uint8Array, trim = -1) {
     if (streamContainers) {
-      pushChar(BYTES_BRACES[1], 0)
+      pushChars(BYTES_BRACES[1], 0)
     }
     const start = offset
     pushBase64(val)
     if (streamContainers) {
-      return pushChar(BYTES_BRACES[0], trim)
+      return pushChars(BYTES_BRACES[0], trim)
     }
     return pushHeader(BYTES, offset - start, trim)
   }
 
   function encodeList(val: unknown[], trim = -1) {
     if (streamContainers) {
-      pushChar(LIST_BRACES[1], 1)
+      pushChars(LIST_BRACES[1], 1)
     }
     depth++
     const before = offset
@@ -520,7 +523,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
     depth--
     if (streamContainers) {
-      return pushChar(LIST_BRACES[0], trim)
+      return pushChars(LIST_BRACES[0], trim)
     }
     return pushHeader(LIST, offset - before, trim)
   }
@@ -534,7 +537,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
   function encodeEntries(entries: [unknown, unknown][], trim = -1) {
     if (streamContainers) {
-      pushChar(MAP_BRACES[1], 1)
+      pushChars(MAP_BRACES[1], 1)
     }
     depth++
     const before = offset
@@ -545,7 +548,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
     depth--
     if (streamContainers) {
-      return pushChar(MAP_BRACES[0], trim)
+      return pushChars(MAP_BRACES[0], trim)
     }
     return pushHeader(MAP, offset - before, trim)
   }
@@ -619,9 +622,16 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
   const knownValues = options.knownValues ?? []
   return decodeAny(0)[0]
   function decodeAny(offset: number): [unknown, number] {
+    // trim leading whitespace
+    while (rando[offset] === 32 || rando[offset] === 10 || rando[offset] === 13 || rando[offset] === 9) {
+      offset++
+    }
     const [val, newOffset] = decodeB64(rando, offset)
-    offset = newOffset
-    const tag = rando[offset++]
+    const tag = rando[newOffset]
+    if (tag === B64_STRING.charCodeAt(0)) {
+      return [new TextDecoder().decode(rando.subarray(offset, newOffset)), newOffset + 1]
+    }
+    offset = newOffset + 1
     if (tag === NULL.charCodeAt(0)) {
       return [null, offset]
     }
