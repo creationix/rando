@@ -101,6 +101,15 @@ export function encodeB64(num) {
 function encodeZigZag(num) {
     return num >= 0n ? num * 2n : -1n - num * 2n;
 }
+function decodeZigZag(num) {
+    return num & 1n ? -(num >> 1n) - 1n : num >> 1n;
+}
+function toNumberMaybe(num) {
+    if (Number.isSafeInteger(Number(num))) {
+        return Number(num);
+    }
+    return num;
+}
 const decMatch = /^(?<whole>[+-]?\d+?)(?<zeroes>0*)(?:\.(?<part>\d+))?(?:[eE](?<epow>[+-]?\d+))?$/;
 // Split a float into signed integer parts of base and exponent base 10
 // This uses the built-in string conversion to get the parts
@@ -474,4 +483,26 @@ export function encode(rootVal, options = {}) {
         }
         throw new TypeError('Unsupported value');
     }
+}
+export function parse(rando) {
+    const buf = new TextEncoder().encode(rando);
+    return decode(buf, 0)[0];
+}
+export function decode(rando, offset = 0) {
+    const [val, newOffset] = decodeB64(rando, offset);
+    offset = newOffset;
+    const tag = rando[offset++];
+    if (tag === NULL.charCodeAt(0)) {
+        return [null, offset];
+    }
+    if (tag === FALSE.charCodeAt(0)) {
+        return [false, offset];
+    }
+    if (tag === TRUE.charCodeAt(0)) {
+        return [true, offset];
+    }
+    if (tag === INTEGER.charCodeAt(0)) {
+        return [toNumberMaybe(decodeZigZag(BigInt(val))), offset];
+    }
+    throw new Error(`TODO: parse type ${String.fromCharCode(tag)}`);
 }

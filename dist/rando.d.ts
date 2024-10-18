@@ -16,3 +16,5 @@ export declare function continuedFractionApproximation(num: number, maxIteration
 export declare function encodeBinary(rootVal: unknown, options?: EncodeOptions): Uint8Array;
 export declare function stringify(rootVal: unknown, options?: EncodeOptions): string;
 export declare function encode(rootVal: unknown, options?: EncodeOptions): Uint8Array;
+export declare function parse(rando: string): number | bigint | boolean;
+export declare function decode(rando: Uint8Array, offset?: number): (number | bigint)[] | (number | boolean)[];
