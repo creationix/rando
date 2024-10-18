@@ -116,7 +116,7 @@ Rando does automatic de-duplication of strings and numbers within a value. For e
 ```
 6[    -- List with 6 bytes of body
   1*  -- Pointer to value at 1 byte offset from end of this value
-  *   -- Pointer to value at 0 btye offset from end of this value
+  *   -- Pointer to value at 0 byte offset from end of this value
   38+ -- Positive integer 100
 ```
 
@@ -222,4 +222,101 @@ console.log(decoded);
 //   headers: [Getter],
 //   body: [Getter],
 // }
+```
+
+### Pretty Printed Mode
+
+Technically rando allows whitespace before any b64 digit.  The offsets need to take this into account, but it does make for an easier to read version when learning the format or trying to see how it encodes things.  For example, the fruit example from the tests.
+
+```js
+import * as Rando from "@creationix/rando"
+
+const fruit = [
+  { color: 'red', fruits: ['apple', 'strawberry'] },
+  { color: 'green', fruits: ['apple'] },
+  { color: 'yellow', fruits: ['apple', 'banana'] },
+]
+
+// Pretty Printed JSON
+console.log(JSON.stringify(fruit, null, 1))
+// [
+//  {
+//   "color": "red",
+//   "fruits": [
+//    "apple",
+//    "strawberry"
+//   ]
+//  },
+//  {
+//   "color": "green",
+//   "fruits": [
+//    "apple"
+//   ]
+//  },
+//  {
+//   "color": "yellow",
+//   "fruits": [
+//    "apple",
+//    "banana"
+//   ]
+//  }
+// ]
+
+// Compact JSON
+console.log(JSON.stringify(fruit))
+// [{"color":"red","fruits":["apple","strawberry"]},{"color":"green","fruits":["apple"]},{"color":"yellow","fruits":["apple","banana"]}]
+
+// Compact Rando
+console.log(Rando.stringify(fruit))
+// 1f;o:E*red'L*e;Q*a$strawberrye:e*green'j*2;o*z:color'yellow'fruits'd;apple'banana'
+
+// Pretty Rando
+console.log(Rando.stringify(fruit, { prettyPrint: true }))
+// 24;
+//  H:
+//   17* red'
+//   1d* n;
+//    1g*
+//    a$strawberry
+//  q:
+//   p* green'
+//   u* 6;
+//    y*
+//  P:
+//   color' yellow'
+//   fruits' l;
+//    apple'
+//    banana'
+```
+
+### Streaming Mode
+
+In some cases you don't intend to use this for random access, but still want access to the deduplication, binary, or other features of the format.  For those use cases, you can enable streaming mode with replaces the length-prefix from containers to use delimiters instead.
+
+Continuing the fruit example, streaming mode looks like:
+
+```js
+// Continued from above...
+
+// Compact Streaming Rando
+console.log(Rando.stringify(fruit, { streamContainers: true }))
+// [{E*red'L*[Q*a$strawberry]}{e*green'j*[o*]}{color'yellow'fruits'[apple'banana']}]
+
+// Pretty Streaming Rando
+console.log(Rando.stringify(fruit, { streamContainers: true, prettyPrint: true }))
+// [
+//  {
+//   1b* red'
+//   1h* [
+//    1k*
+//    a$strawberry ] }
+//  {
+//   r* green'
+//   w* [
+//    A* ] }
+//  {
+//   color' yellow'
+//   fruits' [
+//    apple'
+//    banana' ] } ]
 ```
