@@ -405,6 +405,21 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     return pushRaw(new Uint8Array(bytes))
   }
 
+  function pushChar(char: string, trim = -1) {
+    console.log('pushChar', { char, trim })
+    const bytes = [char.charCodeAt(0)]
+    if (prettyPrint) {
+      if (trim < 0) {
+        injectWhitespace(bytes, depth)
+      } else {
+        while (trim-- > 0) {
+          bytes.unshift(' '.charCodeAt(0))
+        }
+      }
+    }
+    return pushRaw(new Uint8Array(bytes))
+  }
+
   function pushHeaderPair(type: string, value1: number | bigint, value2: number | bigint, trim = -1) {
     pushHeader(type, value2, 0)
     return pushHeader(SEP, value1, trim)
@@ -465,7 +480,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
       if (segments.length > 1) {
         if (streamContainers) {
-          pushRaw(new Uint8Array([CHAIN_BRACES.charCodeAt(1)]))
+          pushChar(CHAIN_BRACES[1], 0)
         }
         depth++
         const before = offset
@@ -475,7 +490,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
         }
         depth--
         if (streamContainers) {
-          return pushRaw(new Uint8Array([CHAIN_BRACES.charCodeAt(0)]))
+          return pushChar(CHAIN_BRACES[0], trim)
         }
         return pushHeader(CHAIN, offset - before, trim)
       }
@@ -486,19 +501,19 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
   function encodeBinary(val: Uint8Array, trim = -1) {
     if (streamContainers) {
-      pushRaw(new Uint8Array([BYTES_BRACES.charCodeAt(1)]))
+      pushChar(BYTES_BRACES[1], 0)
     }
     const start = offset
     pushBase64(val)
     if (streamContainers) {
-      return pushRaw(new Uint8Array([BYTES_BRACES.charCodeAt(0)]))
+      return pushChar(BYTES_BRACES[0], trim)
     }
     return pushHeader(BYTES, offset - start, trim)
   }
 
   function encodeList(val: unknown[], trim = -1) {
     if (streamContainers) {
-      pushRaw(new Uint8Array([LIST_BRACES.charCodeAt(1)]))
+      pushChar(LIST_BRACES[1], 1)
     }
     depth++
     const before = offset
@@ -507,7 +522,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
     depth--
     if (streamContainers) {
-      return pushRaw(new Uint8Array([LIST_BRACES.charCodeAt(0)]))
+      return pushChar(LIST_BRACES[0], trim)
     }
     return pushHeader(LIST, offset - before, trim)
   }
@@ -521,7 +536,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
   function encodeEntries(entries: [unknown, unknown][], trim = -1) {
     if (streamContainers) {
-      pushRaw(new Uint8Array([MAP_BRACES.charCodeAt(1)]))
+      pushChar(MAP_BRACES[1], 1)
     }
     depth++
     const before = offset
@@ -532,7 +547,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
     depth--
     if (streamContainers) {
-      return pushRaw(new Uint8Array([MAP_BRACES.charCodeAt(0)]))
+      return pushChar(MAP_BRACES[0], trim)
     }
     return pushHeader(MAP, offset - before, trim)
   }
