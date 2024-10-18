@@ -1,6 +1,6 @@
 {
   "name": "@creationix/rando",
-  "version": "1.0.2",
+  "version": "3.0.0",
   "description": "A serialization format optimized for fast random access of unstructured data",
   "module": "dist/rando.js",
   "type": "module",

@@ -414,7 +414,6 @@ test('encode known values', () => {
   expect(stringify(fruit, options)).toEqual('B;b:&1&7&4;8&a&9:&4&7&2;8&b:&3&7&4;8&9&')
 })
 
-
 test('encode pretty-print', () => {
   const options: EncodeOptions = {
     prettyPrint: true,
@@ -599,9 +598,9 @@ test('decode bytes', () => {
     new Uint8Array([
       104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106, 221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
       197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122, 139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
-      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45,
-      87, 48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90,
-      166, 242, 157, 87, 37,
+      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45, 87,
+      48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90, 166,
+      242, 157, 87, 37,
     ]),
   )
 })
@@ -631,9 +630,9 @@ test('decode streaming bytes', () => {
     new Uint8Array([
       104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106, 221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
       197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122, 139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
-      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45,
-      87, 48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90,
-      166, 242, 157, 87, 37,
+      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45, 87,
+      48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90, 166,
+      242, 157, 87, 37,
     ]),
   )
 })
@@ -674,7 +673,9 @@ test('decode pointers', () => {
   expect(parse('2*  1+')).toEqual(-1)
   expect(parse('2*  10+')).toEqual(32)
   expect(parse('4*___+10+')).toEqual(32)
-  expect(parse('17;__+_*Z*X*V*T*R*P*N*L*J*H*F*D*B*z*x*v*t*r*p*n*l*j*h*f*d*b*9*7*5*3*1**__+')).toEqual(new Array(35).fill(-2048))
+  expect(parse('17;__+_*Z*X*V*T*R*P*N*L*J*H*F*D*B*z*x*v*t*r*p*n*l*j*h*f*d*b*9*7*5*3*1**__+')).toEqual(
+    new Array(35).fill(-2048),
+  )
 })
 
 test('decode string chains', () => {
@@ -683,9 +684,10 @@ test('decode string chains', () => {
   expect(parse('(1**8$/segment)')).toEqual('/segment/segment/segment')
 })
 
-
 test('decode known values', () => {
-  expect(parse('1m;p:G*3$redO*e;U*a$strawberryf:f*5$greenl*2;r*E:5$color6$yellow6$fruitsf;5$apple6$banana')).toEqual(fruit)
+  expect(parse('1m;p:G*3$redO*e;U*a$strawberryf:f*5$greenl*2;r*E:5$color6$yellow6$fruitsf;5$apple6$banana')).toEqual(
+    fruit,
+  )
   const options: DecodeOptions = {
     knownValues: [
       'color',
@@ -704,8 +706,127 @@ test('decode known values', () => {
   expect(parse('B;b:&1&7&4;8&a&9:&4&7&2;8&b:&3&7&4;8&9&', options)).toEqual(fruit)
 })
 
-test('decode values with whitespace', ()=> {
-  expect(parse('2n;\n M:\n  1h*\n  3$red\n  1o*\n  n;\n   1s*\n   a$strawberry\n v:\n  u*\n  5$green\n  A*\n  6;\n   F*\n Y:\n  5$color\n  6$yellow\n  6$fruits\n  n;\n   5$apple\n   6$banana')).toEqual(fruit)
+test('decode values with whitespace', () => {
+  expect(
+    parse(
+      '2n;\n M:\n  1h*\n  3$red\n  1o*\n  n;\n   1s*\n   a$strawberry\n v:\n  u*\n  5$green\n  A*\n  6;\n   F*\n Y:\n  5$color\n  6$yellow\n  6$fruits\n  n;\n   5$apple\n   6$banana',
+    ),
+  ).toEqual(fruit)
 })
 
-// TODO: decode binary
+test('encode README values', () => {
+  expect(stringify(0)).toEqual('+')
+  expect(stringify(1)).toEqual('2+')
+  expect(stringify(10)).toEqual('k+')
+  expect(stringify(100)).toEqual('38+')
+  expect(stringify(1000)).toEqual('vg+')
+  expect(stringify(-1)).toEqual('1+')
+  expect(stringify(-10)).toEqual('j+')
+  expect(stringify(-100)).toEqual('37+')
+  expect(stringify(-1000)).toEqual('vf+')
+  expect(stringify(0.13)).toEqual('q|3.')
+  expect(stringify(0.03333333333333333)).toEqual('2|u/')
+  // biome-ignore lint/suspicious/noApproximativeNumericConstant: not exactly PI on purpose
+  expect(stringify(3.14159)).toEqual('2ppu|9.')
+  expect(stringify(true)).toEqual('!')
+  expect(stringify(false)).toEqual('~')
+  expect(stringify(null)).toEqual('?')
+  expect(stringify('')).toEqual('$')
+  expect(stringify('Banana')).toEqual('6$Banana')
+  expect(stringify('Hi, World')).toEqual('9$Hi, World')
+  expect(stringify('🍌')).toEqual('4$🍌')
+  expect(stringify([1, 2, 3])).toEqual('6;2+4+6+')
+  expect(stringify([100, 100, 100])).toEqual('6;1**38+')
+  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual('f:1$a2+1$b4+1$c6+')
+  expect(stringify([{ name: 'Alice' }, { name: 'Bob' }])).toEqual('o;9:9*5$Aliceb:4$name3$Bob')
+
+  const sampleDoc = {
+    person: {
+      name: 'John Doe',
+      age: 30,
+      id: 12345,
+      'ai-generated': true,
+    },
+    list: [1, 2, 3, 4, 5],
+    nested: {
+      key: 'value',
+      nested: {
+        key: 'value',
+      },
+    },
+  }
+
+  const encoded1 = stringify(sampleDoc)
+  expect(encoded1).toEqual(
+    '1E:6$personK:4$name8$John Doe3$ageY+2$id61O+c$ai-generated!4$lista;2+4+6+8+a+6*q:c*f*6$nestedc:3$key5$value',
+  )
+
+  const decoded1 = parse(encoded1)
+  expect(decoded1).toEqual(sampleDoc)
+
+  expect(stringify([100, 100, 100])).toEqual('6;1**38+')
+
+  const doc = {
+    method: 'GET',
+    scheme: 'https',
+    host: 'example.com',
+    port: 443,
+    path: '/',
+    headers: [
+      ['accept', 'application/json'],
+      ['user-agent', 'Mozilla/5.0'],
+    ],
+  }
+  const known = [
+    'method',
+    'GET',
+    'POST',
+    'PUT',
+    'DELETE',
+    'scheme',
+    'http',
+    'https',
+    'host',
+    'port',
+    'path',
+    '/',
+    80,
+    443,
+    'headers',
+    'accept',
+    'user-agent',
+    ['accept', 'application/json'],
+  ]
+  expect(stringify(doc, { knownValues: known })).toEqual('R:&1&5&7&8&b$example.com9&d&a&b&e&j;h&f;g&b$Mozilla/5.0')
+
+  // Some common values in an http response that
+  // both sides know about (similar to HTTP2 HPACK)
+  const opts = {
+    knownValues: [
+      'headers',
+      'body',
+      'Content-Length',
+      ['Content-Type', 'application/json'],
+      ['Content-Type', 'application/json; charset=utf-8'],
+      // Common status codes
+      'status',
+      200,
+      404,
+      308,
+    ],
+  }
+
+  const body = JSON.stringify({ hello: 'world' })
+  const httpResponse = {
+    status: 200,
+    headers: [
+      ['Content-Type', 'application/json'],
+      ['Content-Length', body.length],
+    ],
+    body,
+  }
+  const encoded = stringify(httpResponse, opts)
+  expect(encoded).toEqual('A:5&6&&8;3&4;2&y+1&h${"hello":"world"}')
+  const decoded = parse(encoded, opts)
+  expect(decoded).toEqual(httpResponse)
+})
