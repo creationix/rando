@@ -859,3 +859,14 @@ test('encode README values', () => {
   const decoded = parse(encoded, opts)
   expect(decoded).toEqual(httpResponse)
 })
+
+test('pretty-print stream mode', () => {
+  const options: EncodeOptions = {
+    prettyPrint: true,
+    streamContainers: true,
+  }
+  const encoded = stringify(fruit, options)
+  expect(encoded).toEqual(
+    '[\n {\n  1d* 3$red\n  1k* [\n   1o*\n   a$strawberry ] }\n {\n  s* 5$green\n  y* [\n   D* ] }\n {\n  5$color 6$yellow\n  6$fruits [\n   5$apple\n   6$banana ] } ]',
+  )
+})
