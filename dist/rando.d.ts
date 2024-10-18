@@ -9,6 +9,9 @@ export interface EncodeOptions {
     binaryHeaders?: boolean;
     streamContainers?: boolean;
 }
+export interface DecodeOptions {
+    knownValues?: unknown[];
+}
 export declare function findStringSegments(rootVal: unknown, options?: EncodeOptions): {
     [val: string]: number;
 };
@@ -16,5 +19,5 @@ export declare function continuedFractionApproximation(num: number, maxIteration
 export declare function encodeBinary(rootVal: unknown, options?: EncodeOptions): Uint8Array;
 export declare function stringify(rootVal: unknown, options?: EncodeOptions): string;
 export declare function encode(rootVal: unknown, options?: EncodeOptions): Uint8Array;
-export declare function parse(rando: string): string | number | bigint | boolean;
-export declare function decode(rando: Uint8Array, offset?: number): (string | number)[] | (number | bigint)[] | (number | boolean)[];
+export declare function parse(rando: string, options?: DecodeOptions): unknown;
+export declare function decode(rando: Uint8Array, offset: number, options: DecodeOptions): [unknown, number];

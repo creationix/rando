@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import {
   type EncodeOptions,
+  type DecodeOptions,
   stringify,
   parse,
   findStringSegments,
@@ -378,12 +379,20 @@ test('encode string chains', () => {
   expect(stringify('/segment/segment/segment', opts)).toEqual('(1**8$/segment)')
 })
 
+test('encode repeated values', () => {
+  const l = new Array(35).fill(-2048)
+  // This is big enough that __+ is duplicated once the pointer cost gets over 2 bytes
+  // We only want to use pointers if they are actually smaller.
+  expect(stringify(l)).toEqual('17;__+_*Z*X*V*T*R*P*N*L*J*H*F*D*B*z*x*v*t*r*p*n*l*j*h*f*d*b*9*7*5*3*1**__+')
+})
+
+const fruit = [
+  { color: 'red', fruits: ['apple', 'strawberry'] },
+  { color: 'green', fruits: ['apple'] },
+  { color: 'yellow', fruits: ['apple', 'banana'] },
+]
+
 test('encode known values', () => {
-  const fruit = [
-    { color: 'red', fruits: ['apple', 'strawberry'] },
-    { color: 'green', fruits: ['apple'] },
-    { color: 'yellow', fruits: ['apple', 'banana'] },
-  ]
   expect(stringify(fruit)).toEqual(
     '1m;p:G*3$redO*e;U*a$strawberryf:f*5$greenl*2;r*E:5$color6$yellow6$fruitsf;5$apple6$banana',
   )
@@ -405,11 +414,6 @@ test('encode known values', () => {
   expect(stringify(fruit, options)).toEqual('B;b:&1&7&4;8&a&9:&4&7&2;8&b:&3&7&4;8&9&')
 })
 
-const fruit = [
-  { color: 'red', fruits: ['apple', 'strawberry'] },
-  { color: 'green', fruits: ['apple'] },
-  { color: 'yellow', fruits: ['apple', 'banana'] },
-]
 
 test('encode pretty-print', () => {
   const options: EncodeOptions = {
@@ -515,6 +519,7 @@ test('decode rationals', () => {
   expect(parse('2|/')).toEqual(1 / 0)
   expect(parse('1|/')).toEqual(-1 / 0)
   expect(parse('|/')).toBeNaN()
+  expect(() => parse('2|0$')).toThrow()
 })
 
 test('decode decimals', () => {
@@ -567,4 +572,140 @@ test('decode strings', () => {
   expect(parse(`a$${' '.repeat(10)}`)).toEqual(' '.repeat(10))
   expect(parse(`1A$${' '.repeat(100)}`)).toEqual(' '.repeat(100))
   expect(parse(`fE$${' '.repeat(1000)}`)).toEqual(' '.repeat(1000))
-})  
+})
+
+test('decode bytes', () => {
+  expect(parse('=')).toEqual(new Uint8Array([]))
+  expect(parse('2=AA')).toEqual(new Uint8Array([0]))
+  expect(parse('3=AAA')).toEqual(new Uint8Array([0, 0]))
+  expect(parse('4=AAAA')).toEqual(new Uint8Array([0, 0, 0]))
+  expect(parse('4=BCDE')).toEqual(new Uint8Array([0b00000100, 0b00100000, 0b11000100]))
+  expect(parse('4=EDCB')).toEqual(new Uint8Array([0b00010000, 0b00110000, 0b10000001]))
+  expect(parse('6=AQIDBA')).toEqual(new Uint8Array([1, 2, 3, 4]))
+  expect(parse(`e=ICAgICAgICAgIA`)).toEqual(new Uint8Array(10).fill(32))
+  expect(parse(`e=f39_f39_f39_fw`)).toEqual(new Uint8Array(10).fill(127))
+  expect(parse(`2=_w`)).toEqual(new Uint8Array(1).fill(255))
+  expect(parse(`3=__8`)).toEqual(new Uint8Array(2).fill(255))
+  expect(parse(`4=____`)).toEqual(new Uint8Array(3).fill(255))
+  expect(parse(`e=_____________w`)).toEqual(new Uint8Array(10).fill(255))
+  expect(parse(`f=______________8`)).toEqual(new Uint8Array(11).fill(255))
+  expect(parse(`g=________________`)).toEqual(new Uint8Array(12).fill(255))
+  expect(parse(`6=ICAgIA`)).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32))
+  expect(
+    parse(
+      `26=aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ`,
+    ),
+  ).toEqual(
+    new Uint8Array([
+      104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106, 221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
+      197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122, 139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
+      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45,
+      87, 48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90,
+      166, 242, 157, 87, 37,
+    ]),
+  )
+})
+
+test('decode streaming bytes', () => {
+  expect(parse('<>')).toEqual(new Uint8Array([]))
+  expect(parse('<AA>')).toEqual(new Uint8Array([0]))
+  expect(parse('<AAA>')).toEqual(new Uint8Array([0, 0]))
+  expect(parse('<AAAA>')).toEqual(new Uint8Array([0, 0, 0]))
+  expect(parse('<BCDE>')).toEqual(new Uint8Array([0b00000100, 0b00100000, 0b11000100]))
+  expect(parse('<EDCB>')).toEqual(new Uint8Array([0b00010000, 0b00110000, 0b10000001]))
+  expect(parse('<AQIDBA>')).toEqual(new Uint8Array([1, 2, 3, 4]))
+  expect(parse('<ICAgICAgICAgIA>')).toEqual(new Uint8Array(10).fill(32))
+  expect(parse('<f39_f39_f39_fw>')).toEqual(new Uint8Array(10).fill(127))
+  expect(parse('<_w>')).toEqual(new Uint8Array(1).fill(255))
+  expect(parse('<__8>')).toEqual(new Uint8Array(2).fill(255))
+  expect(parse('<____>')).toEqual(new Uint8Array(3).fill(255))
+  expect(parse('<_____________w>')).toEqual(new Uint8Array(10).fill(255))
+  expect(parse('<______________8>')).toEqual(new Uint8Array(11).fill(255))
+  expect(parse('<________________>')).toEqual(new Uint8Array(12).fill(255))
+  expect(parse('<ICAgIA>')).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32))
+  expect(
+    parse(
+      '<aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ>',
+    ),
+  ).toEqual(
+    new Uint8Array([
+      104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106, 221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
+      197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122, 139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
+      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45,
+      87, 48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90,
+      166, 242, 157, 87, 37,
+    ]),
+  )
+})
+
+test('decode lists', () => {
+  expect(parse(';')).toEqual([])
+  expect(parse('1;+')).toEqual([0])
+  expect(parse('2;+!')).toEqual([0, true])
+  expect(parse('3;+!~')).toEqual([0, true, false])
+  expect(parse('6;2+4+6+')).toEqual([1, 2, 3])
+  expect(parse('1;;')).toEqual([[]])
+  expect(parse('3;1;;')).toEqual([[[]]])
+})
+
+test('decode streaming lists', () => {
+  expect(parse('[]')).toEqual([])
+  expect(parse('[2+4+6+]')).toEqual([1, 2, 3])
+  expect(parse('[[]]')).toEqual([[]])
+  expect(parse('[[[]]]')).toEqual([[[]]])
+})
+
+test('decode objects', () => {
+  expect(parse(':')).toEqual({})
+  expect(parse('4:1$a+')).toEqual({ a: 0 })
+  expect(parse('8:1$a+1$b!')).toEqual({ a: 0, b: true })
+  expect(parse('c:1$a+1$b!1$c:')).toEqual({ a: 0, b: true, c: {} })
+})
+
+test('decode streaming objects', () => {
+  expect(parse('{}')).toEqual({})
+  expect(parse('{1$a+}')).toEqual({ a: 0 })
+  expect(parse('{1$a+1$b!}')).toEqual({ a: 0, b: true })
+  expect(parse('{1$a+1$b!1$c{}}')).toEqual({ a: 0, b: true, c: {} })
+})
+
+test('decode pointers', () => {
+  expect(parse('*+')).toEqual(0)
+  expect(parse('2*  1+')).toEqual(-1)
+  expect(parse('2*  10+')).toEqual(32)
+  expect(parse('4*___+10+')).toEqual(32)
+  expect(parse('17;__+_*Z*X*V*T*R*P*N*L*J*H*F*D*B*z*x*v*t*r*p*n*l*j*h*f*d*b*9*7*5*3*1**__+')).toEqual(new Array(35).fill(-2048))
+})
+
+test('decode string chains', () => {
+  expect(parse('d,1**8$/segment')).toEqual('/segment/segment/segment')
+  expect(parse('k,8*6$/o/n/e8$/segment')).toEqual('/segment/o/n/e/segment')
+  expect(parse('(1**8$/segment)')).toEqual('/segment/segment/segment')
+})
+
+
+test('decode known values', () => {
+  expect(parse('1m;p:G*3$redO*e;U*a$strawberryf:f*5$greenl*2;r*E:5$color6$yellow6$fruitsf;5$apple6$banana')).toEqual(fruit)
+  const options: DecodeOptions = {
+    knownValues: [
+      'color',
+      'red',
+      'orange',
+      'yellow',
+      'green',
+      'blue',
+      'violet',
+      'fruits',
+      'apple',
+      'banana',
+      'strawberry',
+    ],
+  }
+  expect(parse('B;b:&1&7&4;8&a&9:&4&7&2;8&b:&3&7&4;8&9&', options)).toEqual(fruit)
+})
+
+test('decode values with whitespace', ()=> {
+  expect(parse('2n;\n M:\n  1h*\n  3$red\n  1o*\n  n;\n   1s*\n   a$strawberry\n v:\n  u*\n  5$green\n  A*\n  6;\n   F*\n Y:\n  5$color\n  6$yellow\n  6$fruits\n  n;\n   5$apple\n   6$banana')).toEqual(fruit)
+})
+
+// TODO: decode binary

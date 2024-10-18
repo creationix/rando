@@ -62,6 +62,11 @@ export function decodeB64(buf, offset = 0, end = buf.length) {
         const byte = buf[offset];
         const index = BASE64_DIGITS.indexOf(String.fromCharCode(byte));
         if (index < 0) {
+            // skip whitespace
+            if (byte === 32 || byte === 10 || byte === 13 || byte === 9) {
+                offset++;
+                continue;
+            }
             break;
         }
         offset++;
@@ -97,6 +102,25 @@ export function encodeB64(num) {
     }
     bytes.reverse();
     return bytes;
+}
+function parseBase64(value) {
+    const output = [];
+    for (let i = 0, l = value.length; i < l;) {
+        const byte1 = BASE64_CHARS.indexOf(String.fromCharCode(value[i++]));
+        const byte2 = BASE64_CHARS.indexOf(String.fromCharCode(value[i++]));
+        output.push((byte1 << 2) | (byte2 >> 4));
+        if (i >= l) {
+            break;
+        }
+        const byte3 = BASE64_CHARS.indexOf(String.fromCharCode(value[i++]));
+        output.push(((byte2 & 0x0f) << 4) | (byte3 >> 2));
+        if (i >= l) {
+            break;
+        }
+        const byte4 = BASE64_CHARS.indexOf(String.fromCharCode(value[i++]));
+        output.push(((byte3 & 0x03) << 6) | byte4);
+    }
+    return new Uint8Array(output);
 }
 function encodeZigZag(num) {
     return num >= 0n ? num * 2n : -1n - num * 2n;
@@ -484,11 +508,11 @@ export function encode(rootVal, options = {}) {
         throw new TypeError('Unsupported value');
     }
 }
-export function parse(rando) {
+export function parse(rando, options = {}) {
     const buf = new TextEncoder().encode(rando);
-    return decode(buf, 0)[0];
+    return decode(buf, 0, options)[0];
 }
-export function decode(rando, offset = 0) {
+export function decode(rando, offset = 0, options) {
     const [val, newOffset] = decodeB64(rando, offset);
     offset = newOffset;
     const tag = rando[offset++];
@@ -521,6 +545,94 @@ export function decode(rando, offset = 0) {
         const end = offset + Number(val);
         const str = new TextDecoder().decode(rando.slice(offset, end));
         return [str, end];
+    }
+    if (tag === BYTES.charCodeAt(0)) {
+        const end = offset + Number(val);
+        const bytes = parseBase64(rando.slice(offset, end));
+        return [bytes, end];
+    }
+    if (tag === BYTES_BRACES.charCodeAt(0)) {
+        const start = offset;
+        while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) {
+            offset++;
+        }
+        const bytes = parseBase64(rando.slice(start, offset));
+        return [bytes, offset + 1];
+    }
+    if (tag === LIST.charCodeAt(0)) {
+        // TODO: lazy parsed list
+        const end = offset + Number(val);
+        const list = [];
+        while (offset < end) {
+            const [item, newOffset] = decode(rando, offset, options);
+            list.push(item);
+            offset = newOffset;
+        }
+        return [list, offset];
+    }
+    if (tag === LIST_BRACES.charCodeAt(0)) {
+        const list = [];
+        while (rando[offset] !== LIST_BRACES.charCodeAt(1)) {
+            const [item, newOffset] = decode(rando, offset, options);
+            list.push(item);
+            offset = newOffset;
+        }
+        return [list, offset + 1];
+    }
+    if (tag === MAP.charCodeAt(0)) {
+        // TODO: lazy parsed map
+        const end = offset + Number(val);
+        const map = {};
+        while (offset < end) {
+            const [key, newOffset] = decode(rando, offset, options);
+            const [value, newerOffset] = decode(rando, newOffset, options);
+            map[key] = value;
+            offset = newerOffset;
+        }
+        return [map, offset];
+    }
+    if (tag === MAP_BRACES.charCodeAt(0)) {
+        const map = {};
+        while (rando[offset] !== MAP_BRACES.charCodeAt(1)) {
+            const [key, newOffset] = decode(rando, offset, options);
+            const [value, newerOffset] = decode(rando, newOffset, options);
+            map[key] = value;
+            offset = newerOffset;
+        }
+        return [map, offset + 1];
+    }
+    if (tag === CHAIN.charCodeAt(0)) {
+        const parts = [];
+        const end = offset + Number(val);
+        while (offset < end) {
+            const [part, newOffset] = decode(rando, offset, options);
+            parts.push(part);
+            offset = newOffset;
+        }
+        return [parts.join(''), offset];
+    }
+    if (tag === CHAIN_BRACES.charCodeAt(0)) {
+        const parts = [];
+        while (rando[offset] !== CHAIN_BRACES.charCodeAt(1)) {
+            const [part, newOffset] = decode(rando, offset, options);
+            parts.push(part);
+            offset = newOffset;
+        }
+        return [parts.join(''), offset + 1];
+    }
+    if (tag === PTR.charCodeAt(0)) {
+        return [decode(rando, offset + Number(val), options)[0], offset];
+    }
+    if (tag === REF.charCodeAt(0)) {
+        const knownValues = options.knownValues;
+        if (!knownValues) {
+            throw new Error('Known values required for reference');
+        }
+        const index = Number(val);
+        if (index >= knownValues.length) {
+            throw new Error('Reference to unknown value');
+        }
+        return [knownValues[index], offset];
     }
     throw new Error(`TODO: parse type ${String.fromCharCode(tag)}`);
 }
