@@ -10,19 +10,19 @@ Rando is a new serialization format optimized for fast random access of unstruct
 
 |                                JSON | Rando                        | Comment                       |
 | ----------------------------------: | :--------------------------- | ----------------------------- |
-|                                 `0` | `+`                          | Positive Integers (val)       |
+|                                 `0` | `+`                          | Zigzag Integers (val)         |
 |                                 `1` | `2+`                         | "                             |
 |                                `10` | `k+`                         | "                             |
 |                               `100` | `38+`                        | "                             |
 |                              `1000` | `vg+`                        | "                             |
-|                                `-1` | `1+`                         | Negative Integers (-1 - val)  |
-|                               `-10` | `j~`                         | "                             |
-|                              `-100` | `37~`                        | "                             |
-|                             `-1000` | `vf~`                        | "                             |
-|               `0.03333333333333333` | `2\|u/`                      | Degree (val \* 360)           |
-|                           `3.14159` | `2ppu\|9.`                   | Float (val as decimal)        |
-|                              `true` | `!`                          | Boolean                       |
-|                             `false` | `~`                          | "                             |
+|                                `-1` | `1+`                         | "                             |
+|                               `-10` | `j+`                         | "                             |
+|                              `-100` | `37+`                        | "                             |
+|                             `-1000` | `vf+`                        | "                             |
+|               `0.03333333333333333` | `2\|u/`                      | Rational (zigzag(num),dem)    |
+|                           `3.14159` | `2ppu\|9.`                   | Decimal (base, exponent)      |
+|                              `true` | `!`                          | True                          |
+|                             `false` | `~`                          | False                         |
 |                              `null` | `?`                          | Null                          |
 |                                `""` | `$`                          | Empty String                  |
 |                       `"Hi, World"` | `9$Hi, World`                | String                        |
