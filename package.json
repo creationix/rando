@@ -1,17 +1,15 @@
 {
   "name": "@creationix/rando",
-  "version": "1.0.2",
+  "version": "3.0.0",
   "description": "A serialization format optimized for fast random access of unstructured data",
-  "main": "rando.js",
+  "module": "dist/rando.js",
   "type": "module",
   "repository": "https://github.com/creationix/rando",
   "scripts": {
-    "test": "bun test",
-    "prepare": "tsc rando.ts -d --target es2022"
+    "test": "bun test"
   },
   "files": [
-    "rando.js",
-    "rando.d.ts",
+    "dist/*",
     "README.md"
   ],
   "keywords": [
@@ -19,5 +17,9 @@
     "lazy"
   ],
   "author": "Tim Caswell",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/bun": "^1.1.11"
+  }
 }
