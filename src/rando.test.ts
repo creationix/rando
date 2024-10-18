@@ -354,6 +354,9 @@ test('encode streaming objects', () => {
   expect(stringify({ a: 0 }, opts)).toEqual("{a'+}")
   expect(stringify({ a: 0, b: true }, opts)).toEqual("{a'+b'!}")
   expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("{a'+b'!c'{}}")
+  expect(stringify(fruit, opts)).toEqual(
+    "[{E*red'L*[Q*a$strawberry]}{e*green'j*[o*]}{color'yellow'fruits'[apple'banana']}]",
+  )
 })
 
 test('encode maps', () => {
