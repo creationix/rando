@@ -406,7 +406,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 
   function pushChar(char: string, trim = -1) {
-    console.log('pushChar', { char, trim })
     const bytes = [char.charCodeAt(0)]
     if (prettyPrint) {
       if (trim < 0) {
@@ -437,7 +436,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
 
     const [base, exp] = splitDecimal(val)
-    // console.log({ val, parts });
 
     // Encode integers as zigzag
     if (exp >= 0 && exp <= 3 && Number.isSafeInteger(val)) {
@@ -565,7 +563,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
 
     if (seen.has(val)) {
-      // console.log("SEEN", val, seen.get(val));
       const s = seen.get(val)
       const dist = offset - s.offset
       const cost = binaryHeaders
@@ -579,7 +576,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     encodeAnyInner(val, trim)
     const written = offset - before
     if (val && typeof val !== 'object' && written >= 3) {
-      // console.log("STORE", val, written);
       seen.set(val, { offset, written })
     }
   }
