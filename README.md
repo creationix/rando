@@ -51,7 +51,7 @@ npm i -S @creationix/rando
 Then import it as any module. The npm package also includes a `.d.ts` package for conveinence.
 
 ```js
-import { encode, decode } from "@creationix/rando";
+import { stringify, parse } from "@creationix/rando";
 
 const sampleDoc = {
   person: {
@@ -69,11 +69,11 @@ const sampleDoc = {
   },
 };
 
-const encoded = encode(sampleDoc);
+const encoded = stringify(sampleDoc);
 console.log(encoded);
 // 1E:6$personK:4$name8$John Doe3$ageY+2$id61O+c$ai-generated!4$lista;2+4+6+8+a+6*q:c*f*6$nestedc:3$key5$value
 
-const decoded = decode(encoded);
+const decoded = parse(encoded);
 console.log(decoded);
 // {
 //   person: [Getter],
