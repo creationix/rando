@@ -558,3 +558,13 @@ test('decode primitives', () => {
   expect(parse('~')).toEqual(false)
   expect(parse('?')).toBeNull()
 })
+
+test('decode strings', () => {
+  expect(parse('$')).toEqual('')
+  expect(parse('1$a')).toEqual('a')
+  expect(parse('2$ab')).toEqual('ab')
+  expect(parse('3$abc')).toEqual('abc')
+  expect(parse(`a$${' '.repeat(10)}`)).toEqual(' '.repeat(10))
+  expect(parse(`1A$${' '.repeat(100)}`)).toEqual(' '.repeat(100))
+  expect(parse(`fE$${' '.repeat(1000)}`)).toEqual(' '.repeat(1000))
+})  
