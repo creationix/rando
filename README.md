@@ -25,12 +25,13 @@ Rando is a new serialization format optimized for fast random access of unstruct
 |                             `false` | `~`                          | False                         |
 |                              `null` | `?`                          | Null                          |
 |                                `""` | `$`                          | Empty String                  |
+|                          `"Banana"` | `Banana'`                    | B64 String                    |
 |                       `"Hi, World"` | `9$Hi, World`                | String                        |
 |                              `"🍌"` | `4$🍌`                       | UTF-8 String                  |
 |                           `[1,2,3]` | `6[2+4+6+`                   | Lists                         |
 |                     `[100,100,100]` | `6;1**38+`                   | Lists with Pointers (repeats) |
-|               `{"a":1,"b":2,"c":3}` | `f:1$a2+1$b4+1$c6+`          | Maps                          |
-| `[{"name":"Alice"},{"name":"Bob"}]` | `o;9:9*5$Aliceb:4$name3$Bob` | Maps and Lists with Pointers  |
+|               `{"a":1,"b":2,"c":3}` | `c:a'2+b'4+c'6+`             | Maps                          |
+| `[{"name":"Alice"},{"name":"Bob"}]` | `l;8:8*Alice'9:name'Bob'`    | Maps and Lists with Pointers  |
 
 Use Rando anywhere you might use JSON if the following are true:
 
@@ -71,7 +72,7 @@ const sampleDoc = {
 
 const encoded = stringify(sampleDoc);
 console.log(encoded);
-// 1E:6$personK:4$name8$John Doe3$ageY+2$id61O+c$ai-generated!4$lista;2+4+6+8+a+6*q:c*f*6$nestedc:3$key5$value
+// 1w:person'H:name'8$John Doeage'Y+id'61O+c$ai-generated!list'a;2+4+6+8+a+6*n:b*d*nested'a:key'value'
 
 const decoded = parse(encoded);
 console.log(decoded);
