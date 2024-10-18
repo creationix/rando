@@ -277,6 +277,43 @@ function injectWhitespace(bytes: number[], depth: number) {
     bytes.unshift('\n'.charCodeAt(0))
   }
 }
+
+function sameShape(a: unknown, b: unknown) {
+  if (a === b) {
+    return true
+  }
+  if (typeof a !== typeof b) {
+    return false
+  }
+  if (!(a && typeof a === 'object' && b && typeof b === 'object')) {
+    return false
+  }
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b)) {
+      return false
+    }
+    if (a.length !== b.length) {
+      return false
+    }
+    for (let i = 0; i < a.length; i++) {
+      if (!sameShape(a[i], b[i])) {
+        return false
+      }
+    }
+    return true
+  }
+  const keys = Object.keys(a)
+  if (keys.length !== Object.keys(b).length) {
+    return false
+  }
+  for (const key of keys) {
+    if (!sameShape(a[key], b[key])) {
+      return false
+    }
+  }
+  return true
+}
+
 export function encodeBinary(rootVal: unknown, options: EncodeOptions = {}) {
   return encode(rootVal, {
     ...options,
@@ -284,6 +321,7 @@ export function encodeBinary(rootVal: unknown, options: EncodeOptions = {}) {
     prettyPrint: false,
   })
 }
+
 export function stringify(rootVal: unknown, options: EncodeOptions = {}) {
   return new TextDecoder().decode(encode(rootVal, { ...options, binaryHeaders: false }))
 }
@@ -301,6 +339,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   let depth = 0
   const seen = new Map<unknown, { offset: number; written: number }>()
   const known = new Map<unknown, number>()
+  const knownObjects = knownValues.filter((v) => v && typeof v === 'object')
   const entries = Object.entries(expectedSegments)
     .filter(([str, count]) => count > 1 && str.length >= chainMinChars)
     .sort((a, b) => a[1] - b[1])
@@ -505,6 +544,14 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     if (known.has(val)) {
       return pushHeader(REF, known.get(val))
     }
+    if (val && typeof val === 'object') {
+      for (const knownObj of knownObjects) {
+        if (sameShape(val, knownObj)) {
+          return pushHeader(REF, known.get(knownObj))
+        }
+      }
+    }
+
     if (seen.has(val)) {
       // console.log("SEEN", val, seen.get(val));
       const s = seen.get(val)
@@ -555,12 +602,12 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 }
 
-export function parse(rando: string, options:DecodeOptions={}):unknown {
+export function parse(rando: string, options: DecodeOptions = {}): unknown {
   const buf = new TextEncoder().encode(rando)
   return decode(buf, 0, options)[0]
 }
 
-export function decode(rando: Uint8Array, offset = 0, options:DecodeOptions):[unknown, number] {
+export function decode(rando: Uint8Array, offset = 0, options: DecodeOptions): [unknown, number] {
   const [val, newOffset] = decodeB64(rando, offset)
   offset = newOffset
   const tag = rando[offset++]
@@ -598,10 +645,12 @@ export function decode(rando: Uint8Array, offset = 0, options:DecodeOptions):[un
     const end = offset + Number(val)
     const bytes = parseBase64(rando.slice(offset, end))
     return [bytes, end]
-  } 
+  }
   if (tag === BYTES_BRACES.charCodeAt(0)) {
     const start = offset
-    while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) { offset++ }
+    while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) {
+      offset++
+    }
     const bytes = parseBase64(rando.slice(start, offset))
     return [bytes, offset + 1]
   }
@@ -671,9 +720,13 @@ export function decode(rando: Uint8Array, offset = 0, options:DecodeOptions):[un
   }
   if (tag === REF.charCodeAt(0)) {
     const knownValues = options.knownValues
-    if (!knownValues) {throw new Error('Known values required for reference')}
+    if (!knownValues) {
+      throw new Error('Known values required for reference')
+    }
     const index = Number(val)
-    if (index >= knownValues.length) {throw new Error('Reference to unknown value')}
+    if (index >= knownValues.length) {
+      throw new Error('Reference to unknown value')
+    }
     return [knownValues[index], offset]
   }
   throw new Error(`TODO: parse type ${String.fromCharCode(tag)}`)

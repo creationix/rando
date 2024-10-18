@@ -252,6 +252,41 @@ function injectWhitespace(bytes, depth) {
         bytes.unshift('\n'.charCodeAt(0));
     }
 }
+function sameShape(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (typeof a !== typeof b) {
+        return false;
+    }
+    if (!(a && typeof a === 'object' && b && typeof b === 'object')) {
+        return false;
+    }
+    if (Array.isArray(a)) {
+        if (!Array.isArray(b)) {
+            return false;
+        }
+        if (a.length !== b.length) {
+            return false;
+        }
+        for (let i = 0; i < a.length; i++) {
+            if (!sameShape(a[i], b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+    const keys = Object.keys(a);
+    if (keys.length !== Object.keys(b).length) {
+        return false;
+    }
+    for (const key of keys) {
+        if (!sameShape(a[key], b[key])) {
+            return false;
+        }
+    }
+    return true;
+}
 export function encodeBinary(rootVal, options = {}) {
     return encode(rootVal, {
         ...options,
@@ -275,6 +310,7 @@ export function encode(rootVal, options = {}) {
     let depth = 0;
     const seen = new Map();
     const known = new Map();
+    const knownObjects = knownValues.filter((v) => v && typeof v === 'object');
     const entries = Object.entries(expectedSegments)
         .filter(([str, count]) => count > 1 && str.length >= chainMinChars)
         .sort((a, b) => a[1] - b[1]);
@@ -460,6 +496,13 @@ export function encode(rootVal, options = {}) {
     function encodeAny(val) {
         if (known.has(val)) {
             return pushHeader(REF, known.get(val));
+        }
+        if (val && typeof val === 'object') {
+            for (const knownObj of knownObjects) {
+                if (sameShape(val, knownObj)) {
+                    return pushHeader(REF, known.get(knownObj));
+                }
+            }
         }
         if (seen.has(val)) {
             // console.log("SEEN", val, seen.get(val));
