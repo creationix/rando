@@ -1,4 +1,4 @@
-import { encodeB64, encode, findStringSegments } from "./rando-v3.ts";
+import { encodeB64, encode, findStringSegments } from "./rando.ts";
 
 for (let i = 0; i < 100; i++) {
   let n: number;
