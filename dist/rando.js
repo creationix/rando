@@ -517,5 +517,10 @@ export function decode(rando, offset = 0) {
         }
         throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`);
     }
+    if (tag === STRING.charCodeAt(0)) {
+        const end = offset + Number(val);
+        const str = new TextDecoder().decode(rando.slice(offset, end));
+        return [str, end];
+    }
     throw new Error(`TODO: parse type ${String.fromCharCode(tag)}`);
 }
