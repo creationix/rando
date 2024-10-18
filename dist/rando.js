@@ -504,5 +504,18 @@ export function decode(rando, offset = 0) {
     if (tag === INTEGER.charCodeAt(0)) {
         return [toNumberMaybe(decodeZigZag(BigInt(val))), offset];
     }
+    if (tag === SEP.charCodeAt(0)) {
+        const [val2, newOffset] = decodeB64(rando, offset);
+        offset = newOffset;
+        const tag2 = rando[offset++];
+        if (tag2 === RATIONAL.charCodeAt(0)) {
+            return [Number(decodeZigZag(BigInt(val))) / Number(val2), offset];
+        }
+        if (tag2 === DECIMAL.charCodeAt(0)) {
+            const str = `${decodeZigZag(BigInt(val)).toString(10)}e${decodeZigZag(BigInt(val2)).toString(10)}`;
+            return [parseFloat(str), offset];
+        }
+        throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`);
+    }
     throw new Error(`TODO: parse type ${String.fromCharCode(tag)}`);
 }
