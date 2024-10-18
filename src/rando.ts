@@ -278,12 +278,9 @@ function injectWhitespace(bytes: number[], depth: number) {
   }
 }
 
-function sameShape(a: unknown, b: unknown) {
+export function sameShape(a: unknown, b: unknown) {
   if (a === b) {
     return true
-  }
-  if (typeof a !== typeof b) {
-    return false
   }
   if (!(a && typeof a === 'object' && b && typeof b === 'object')) {
     return false
@@ -302,16 +299,10 @@ function sameShape(a: unknown, b: unknown) {
     }
     return true
   }
-  const keys = Object.keys(a)
-  if (keys.length !== Object.keys(b).length) {
+  if (Array.isArray(b)) {
     return false
   }
-  for (const key of keys) {
-    if (!sameShape(a[key], b[key])) {
-      return false
-    }
-  }
-  return true
+  return sameShape(Object.entries(a), Object.entries(b))
 }
 
 export function encodeBinary(rootVal: unknown, options: EncodeOptions = {}) {
@@ -396,32 +387,38 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     return pushRaw(new Uint8Array(encodeLeb128(num)))
   }
 
-  function pushHeader(type: string, value: number | bigint) {
+  function pushHeader(type: string, value: number | bigint, trim = -1) {
     if (binaryHeaders) {
       return pushHeaderBinary(type, value)
     }
     const bytes = encodeB64(value)
     bytes.push(type.charCodeAt(0))
     if (prettyPrint) {
-      injectWhitespace(bytes, depth)
+      if (trim < 0) {
+        injectWhitespace(bytes, depth)
+      } else {
+        while (trim-- > 0) {
+          bytes.unshift(' '.charCodeAt(0))
+        }
+      }
     }
     return pushRaw(new Uint8Array(bytes))
   }
 
-  function pushHeaderPair(type: string, value1: number | bigint, value2: number | bigint) {
-    pushHeader(type, value2)
-    return pushHeader(SEP, value1)
+  function pushHeaderPair(type: string, value1: number | bigint, value2: number | bigint, trim = -1) {
+    pushHeader(type, value2, 0)
+    return pushHeader(SEP, value1, trim)
   }
 
-  function encodeNumber(val: number) {
+  function encodeNumber(val: number, trim = -1) {
     if (val === Infinity) {
-      return pushHeaderPair(RATIONAL, 2, 0)
+      return pushHeaderPair(RATIONAL, 2, 0, trim)
     }
     if (val === -Infinity) {
-      return pushHeaderPair(RATIONAL, 1, 0)
+      return pushHeaderPair(RATIONAL, 1, 0, trim)
     }
     if (Number.isNaN(val)) {
-      return pushHeaderPair(RATIONAL, 0, 0)
+      return pushHeaderPair(RATIONAL, 0, 0, trim)
     }
 
     const [base, exp] = splitDecimal(val)
@@ -429,7 +426,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
     // Encode integers as zigzag
     if (exp >= 0 && exp <= 3 && Number.isSafeInteger(val)) {
-      return pushHeader(INTEGER, encodeZigZag(BigInt(val)))
+      return pushHeader(INTEGER, encodeZigZag(BigInt(val)), trim)
     }
 
     // Try to encode using rational when base is large and exp is negative
@@ -445,15 +442,15 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
         denominator < 1e9 &&
         Math.abs(numerator / denominator - val) < 1e-12
       ) {
-        return pushHeaderPair(RATIONAL, encodeZigZag(BigInt(numerator)), denominator)
+        return pushHeaderPair(RATIONAL, encodeZigZag(BigInt(numerator)), denominator, trim)
       }
     }
 
     // Fallthrough that encodes as decimal floating point
-    return pushHeaderPair(DECIMAL, encodeZigZag(BigInt(base)), encodeZigZag(BigInt(exp)))
+    return pushHeaderPair(DECIMAL, encodeZigZag(BigInt(base)), encodeZigZag(BigInt(exp)), trim)
   }
 
-  function encodeString(val: string) {
+  function encodeString(val: string, trim = -1) {
     const body = new TextEncoder().encode(val)
     if (val.length >= chainMinChars) {
       const segments = val.split(chainSplitter).filter(Boolean)
@@ -474,20 +471,20 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
         const before = offset
         for (let i = segments.length - 1; i >= 0; i--) {
           const segment = segments[i]
-          encodeAny(segment)
+          encodeAny(segment, 0)
         }
         depth--
         if (streamContainers) {
           return pushRaw(new Uint8Array([CHAIN_BRACES.charCodeAt(0)]))
         }
-        return pushHeader(CHAIN, offset - before)
+        return pushHeader(CHAIN, offset - before, trim)
       }
     }
     pushRaw(body)
-    return pushHeader(STRING, body.byteLength)
+    return pushHeader(STRING, body.byteLength, trim)
   }
 
-  function encodeBinary(val: Uint8Array) {
+  function encodeBinary(val: Uint8Array, trim = -1) {
     if (streamContainers) {
       pushRaw(new Uint8Array([BYTES_BRACES.charCodeAt(1)]))
     }
@@ -496,10 +493,10 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     if (streamContainers) {
       return pushRaw(new Uint8Array([BYTES_BRACES.charCodeAt(0)]))
     }
-    return pushHeader(BYTES, offset - start)
+    return pushHeader(BYTES, offset - start, trim)
   }
 
-  function encodeList(val: unknown[]) {
+  function encodeList(val: unknown[], trim = -1) {
     if (streamContainers) {
       pushRaw(new Uint8Array([LIST_BRACES.charCodeAt(1)]))
     }
@@ -512,17 +509,17 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     if (streamContainers) {
       return pushRaw(new Uint8Array([LIST_BRACES.charCodeAt(0)]))
     }
-    return pushHeader(LIST, offset - before)
+    return pushHeader(LIST, offset - before, trim)
   }
 
-  function encodeObject(val: object) {
+  function encodeObject(val: object, trim = -1) {
     if (val instanceof Map) {
-      return encodeEntries([...val.entries()])
+      return encodeEntries([...val.entries()], trim)
     }
-    return encodeEntries(Object.entries(val))
+    return encodeEntries(Object.entries(val), trim)
   }
 
-  function encodeEntries(entries: [unknown, unknown][]) {
+  function encodeEntries(entries: [unknown, unknown][], trim = -1) {
     if (streamContainers) {
       pushRaw(new Uint8Array([MAP_BRACES.charCodeAt(1)]))
     }
@@ -530,24 +527,24 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     const before = offset
     for (let i = entries.length - 1; i >= 0; i--) {
       const [key, value] = entries[i]
-      encodeAny(value)
+      encodeAny(value, 1)
       encodeAny(key)
     }
     depth--
     if (streamContainers) {
       return pushRaw(new Uint8Array([MAP_BRACES.charCodeAt(0)]))
     }
-    return pushHeader(MAP, offset - before)
+    return pushHeader(MAP, offset - before, trim)
   }
 
-  function encodeAny(val: unknown): void {
+  function encodeAny(val: unknown, trim = -1): void {
     if (known.has(val)) {
-      return pushHeader(REF, known.get(val))
+      return pushHeader(REF, known.get(val), trim)
     }
     if (val && typeof val === 'object') {
       for (const knownObj of knownObjects) {
         if (sameShape(val, knownObj)) {
-          return pushHeader(REF, known.get(knownObj))
+          return pushHeader(REF, known.get(knownObj), trim)
         }
       }
     }
@@ -560,11 +557,11 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
         ? Math.ceil(Math.log2(dist) / Math.log2(128))
         : Math.ceil(Math.log2(dist) / Math.log2(64)) + 1
       if (cost < s.written) {
-        return pushHeader(PTR, dist)
+        return pushHeader(PTR, dist, trim)
       }
     }
     const before = offset
-    encodeAnyInner(val)
+    encodeAnyInner(val, trim)
     const written = offset - before
     if (val && typeof val !== 'object' && written >= 3) {
       // console.log("STORE", val, written);
@@ -572,30 +569,30 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
     }
   }
 
-  function encodeAnyInner(val: unknown): void {
+  function encodeAnyInner(val: unknown, trim = -1): void {
     if (typeof val === 'string') {
-      return encodeString(val)
+      return encodeString(val, trim)
     }
     if (typeof val === 'bigint') {
-      return pushHeader(INTEGER, encodeZigZag(val))
+      return pushHeader(INTEGER, encodeZigZag(val), trim)
     }
     if (typeof val === 'number') {
-      return encodeNumber(val)
+      return encodeNumber(val, trim)
     }
     if (typeof val === 'boolean') {
-      return pushHeader(val ? TRUE : FALSE, 0)
+      return pushHeader(val ? TRUE : FALSE, 0, trim)
     }
     if (val === null) {
-      return pushHeader(NULL, 0)
+      return pushHeader(NULL, 0, trim)
     }
     if (Array.isArray(val)) {
-      return encodeList(val)
+      return encodeList(val, trim)
     }
     if (val instanceof Uint8Array) {
-      return encodeBinary(val)
+      return encodeBinary(val, trim)
     }
     if (typeof val === 'object') {
-      return encodeObject(val)
+      return encodeObject(val, trim)
     }
 
     throw new TypeError('Unsupported value')
@@ -604,130 +601,126 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
 export function parse(rando: string, options: DecodeOptions = {}): unknown {
   const buf = new TextEncoder().encode(rando)
-  return decode(buf, 0, options)[0]
+  return decode(buf, options)
 }
 
-export function decode(rando: Uint8Array, offset = 0, options: DecodeOptions): [unknown, number] {
-  const [val, newOffset] = decodeB64(rando, offset)
-  offset = newOffset
-  const tag = rando[offset++]
-  if (tag === NULL.charCodeAt(0)) {
-    return [null, offset]
-  }
-  if (tag === FALSE.charCodeAt(0)) {
-    return [false, offset]
-  }
-  if (tag === TRUE.charCodeAt(0)) {
-    return [true, offset]
-  }
-  if (tag === INTEGER.charCodeAt(0)) {
-    return [toNumberMaybe(decodeZigZag(BigInt(val))), offset]
-  }
-  if (tag === SEP.charCodeAt(0)) {
-    const [val2, newOffset] = decodeB64(rando, offset)
+export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
+  const knownValues = options.knownValues ?? []
+  return decodeAny(0)[0]
+  function decodeAny(offset: number): [unknown, number] {
+    const [val, newOffset] = decodeB64(rando, offset)
     offset = newOffset
-    const tag2 = rando[offset++]
-    if (tag2 === RATIONAL.charCodeAt(0)) {
-      return [Number(decodeZigZag(BigInt(val))) / Number(val2), offset]
+    const tag = rando[offset++]
+    if (tag === NULL.charCodeAt(0)) {
+      return [null, offset]
     }
-    if (tag2 === DECIMAL.charCodeAt(0)) {
-      const str = `${decodeZigZag(BigInt(val)).toString(10)}e${decodeZigZag(BigInt(val2)).toString(10)}`
-      return [parseFloat(str), offset]
+    if (tag === FALSE.charCodeAt(0)) {
+      return [false, offset]
     }
-    throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`)
-  }
-  if (tag === STRING.charCodeAt(0)) {
-    const end = offset + Number(val)
-    const str = new TextDecoder().decode(rando.slice(offset, end))
-    return [str, end]
-  }
-  if (tag === BYTES.charCodeAt(0)) {
-    const end = offset + Number(val)
-    const bytes = parseBase64(rando.slice(offset, end))
-    return [bytes, end]
-  }
-  if (tag === BYTES_BRACES.charCodeAt(0)) {
-    const start = offset
-    while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) {
-      offset++
+    if (tag === TRUE.charCodeAt(0)) {
+      return [true, offset]
     }
-    const bytes = parseBase64(rando.slice(start, offset))
-    return [bytes, offset + 1]
-  }
-  if (tag === LIST.charCodeAt(0)) {
-    // TODO: lazy parsed list
-    const end = offset + Number(val)
-    const list: unknown[] = []
-    while (offset < end) {
-      const [item, newOffset] = decode(rando, offset, options)
-      list.push(item)
+    if (tag === INTEGER.charCodeAt(0)) {
+      return [toNumberMaybe(decodeZigZag(BigInt(val))), offset]
+    }
+    if (tag === SEP.charCodeAt(0)) {
+      const [val2, newOffset] = decodeB64(rando, offset)
       offset = newOffset
+      const tag2 = rando[offset++]
+      if (tag2 === RATIONAL.charCodeAt(0)) {
+        return [Number(decodeZigZag(BigInt(val))) / Number(val2), offset]
+      }
+      if (tag2 === DECIMAL.charCodeAt(0)) {
+        const str = `${decodeZigZag(BigInt(val)).toString(10)}e${decodeZigZag(BigInt(val2)).toString(10)}`
+        return [parseFloat(str), offset]
+      }
+      throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`)
     }
-    return [list, offset]
-  }
-  if (tag === LIST_BRACES.charCodeAt(0)) {
-    const list: unknown[] = []
-    while (rando[offset] !== LIST_BRACES.charCodeAt(1)) {
-      const [item, newOffset] = decode(rando, offset, options)
-      list.push(item)
-      offset = newOffset
+    if (tag === STRING.charCodeAt(0)) {
+      const end = offset + Number(val)
+      const str = new TextDecoder().decode(rando.slice(offset, end))
+      return [str, end]
     }
-    return [list, offset + 1]
-  }
-  if (tag === MAP.charCodeAt(0)) {
-    // TODO: lazy parsed map
-    const end = offset + Number(val)
-    const map: Record<string, unknown> = {}
-    while (offset < end) {
-      const [key, newOffset] = decode(rando, offset, options)
-      const [value, newerOffset] = decode(rando, newOffset, options)
-      map[key as string] = value
-      offset = newerOffset
+    if (tag === BYTES.charCodeAt(0)) {
+      const end = offset + Number(val)
+      const bytes = parseBase64(rando.slice(offset, end))
+      return [bytes, end]
     }
-    return [map, offset]
-  }
-  if (tag === MAP_BRACES.charCodeAt(0)) {
-    const map: Record<string, unknown> = {}
-    while (rando[offset] !== MAP_BRACES.charCodeAt(1)) {
-      const [key, newOffset] = decode(rando, offset, options)
-      const [value, newerOffset] = decode(rando, newOffset, options)
-      map[key as string] = value
-      offset = newerOffset
+    if (tag === BYTES_BRACES.charCodeAt(0)) {
+      const start = offset
+      while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) {
+        offset++
+      }
+      const bytes = parseBase64(rando.slice(start, offset))
+      return [bytes, offset + 1]
     }
-    return [map, offset + 1]
-  }
-  if (tag === CHAIN.charCodeAt(0)) {
-    const parts = []
-    const end = offset + Number(val)
-    while (offset < end) {
-      const [part, newOffset] = decode(rando, offset, options)
-      parts.push(part)
-      offset = newOffset
+    if (tag === LIST.charCodeAt(0)) {
+      // TODO: lazy parsed list
+      const end = offset + Number(val)
+      const list: unknown[] = []
+      while (offset < end) {
+        const [item, newOffset] = decodeAny(offset)
+        list.push(item)
+        offset = newOffset
+      }
+      return [list, offset]
     }
-    return [parts.join(''), offset]
-  }
-  if (tag === CHAIN_BRACES.charCodeAt(0)) {
-    const parts = []
-    while (rando[offset] !== CHAIN_BRACES.charCodeAt(1)) {
-      const [part, newOffset] = decode(rando, offset, options)
-      parts.push(part)
-      offset = newOffset
+    if (tag === LIST_BRACES.charCodeAt(0)) {
+      const list: unknown[] = []
+      while (rando[offset] !== LIST_BRACES.charCodeAt(1)) {
+        const [item, newOffset] = decodeAny(offset)
+        list.push(item)
+        offset = newOffset
+      }
+      return [list, offset + 1]
     }
-    return [parts.join(''), offset + 1]
-  }
-  if (tag === PTR.charCodeAt(0)) {
-    return [decode(rando, offset + Number(val), options)[0], offset]
-  }
-  if (tag === REF.charCodeAt(0)) {
-    const knownValues = options.knownValues
-    if (!knownValues) {
-      throw new Error('Known values required for reference')
+    if (tag === MAP.charCodeAt(0)) {
+      // TODO: lazy parsed map
+      const end = offset + Number(val)
+      const map: Record<string, unknown> = {}
+      while (offset < end) {
+        const [key, newOffset] = decodeAny(offset)
+        const [value, newerOffset] = decodeAny(newOffset)
+        map[key as string] = value
+        offset = newerOffset
+      }
+      return [map, offset]
     }
-    const index = Number(val)
-    if (index >= knownValues.length) {
-      throw new Error('Reference to unknown value')
+    if (tag === MAP_BRACES.charCodeAt(0)) {
+      const map: Record<string, unknown> = {}
+      while (rando[offset] !== MAP_BRACES.charCodeAt(1)) {
+        const [key, newOffset] = decodeAny(offset)
+        const [value, newerOffset] = decodeAny(newOffset)
+        map[key as string] = value
+        offset = newerOffset
+      }
+      return [map, offset + 1]
     }
-    return [knownValues[index], offset]
+    if (tag === CHAIN.charCodeAt(0)) {
+      const parts: string[] = []
+      const end = offset + Number(val)
+      while (offset < end) {
+        const [part, newOffset] = decodeAny(offset)
+        parts.push(String(part))
+        offset = newOffset
+      }
+      return [parts.join(''), offset]
+    }
+    if (tag === CHAIN_BRACES.charCodeAt(0)) {
+      const parts: string[] = []
+      while (rando[offset] !== CHAIN_BRACES.charCodeAt(1)) {
+        const [part, newOffset] = decodeAny(offset)
+        parts.push(String(part))
+        offset = newOffset
+      }
+      return [parts.join(''), offset + 1]
+    }
+    if (tag === PTR.charCodeAt(0)) {
+      return [decodeAny(offset + Number(val))[0], offset]
+    }
+    if (tag === REF.charCodeAt(0)) {
+      return [knownValues[Number(val)], offset]
+    }
+    throw new SyntaxError(`Unknown parse type ${String.fromCharCode(tag)}`)
   }
-  throw new Error(`TODO: parse type ${String.fromCharCode(tag)}`)
 }

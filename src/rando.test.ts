@@ -10,7 +10,26 @@ import {
   decodeB64,
   splitDecimal,
   encodeBinary,
+  sameShape,
 } from './rando.ts'
+
+test('sameShape', () => {
+  expect(sameShape(1, 1)).toBe(true)
+  expect(sameShape(1, 2)).toBe(false)
+  expect(sameShape(1, '1')).toBe(false)
+  expect(sameShape(1, true)).toBe(false)
+  expect(sameShape(1, null)).toBe(false)
+  expect(sameShape(1, [])).toBe(false)
+  expect(sameShape(1, {})).toBe(false)
+  expect(sameShape([], [])).toBe(true)
+  expect(sameShape([1, 2, 3], [1, 2, 3])).toBe(true)
+  expect(sameShape([1, 2, 3], [1, 2])).toBe(false)
+  expect(sameShape({ '0': 1, '1': 2 }, [1, 2])).toBe(false)
+  expect(sameShape([1, 2], { '0': 1, '1': 2 })).toBe(false)
+  expect(sameShape({ a: 1, b: 2 }, { a: 1, b: 2 })).toBe(true)
+  expect(sameShape({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(false)
+  expect(sameShape({ a: 1, b: 2 }, { a: 1, b: 3 })).toBe(false)
+})
 
 test('splitDecimal', () => {
   expect(splitDecimal(0.1)).toEqual([1n, -1])
@@ -418,8 +437,18 @@ test('encode pretty-print', () => {
   const options: EncodeOptions = {
     prettyPrint: true,
   }
+  expect(stringify({ int: 123, rational: 1 / 3, decimal: 1.23 }, options)).toEqual(
+    'J:\n 3$int 3S+\n 8$rational 2|3/\n 7$decimal 3S|3.',
+  )
+  expect(stringify({ bool: true, bool2: false, nil: null }, options)).toEqual('u:\n 4$bool !\n 5$bool2 ~\n 3$nil ?')
+  expect(stringify({ obj: {}, arr: [], chain: 'repeat/repeat/repeat' }, options)).toEqual(
+    'M:\n 3$obj :\n 3$arr ;\n 5$chain i,6$repeat*7$/repeat',
+  )
+  expect(stringify({ string: 'Hello', bytes: new Uint8Array([1, 2, 3]) }, options)).toEqual(
+    'y:\n 6$string 5$Hello\n 5$bytes 4=AQID',
+  )
   expect(stringify(fruit, options)).toEqual(
-    '2n;\n M:\n  1h*\n  3$red\n  1o*\n  n;\n   1s*\n   a$strawberry\n v:\n  u*\n  5$green\n  A*\n  6;\n   F*\n Y:\n  5$color\n  6$yellow\n  6$fruits\n  n;\n   5$apple\n   6$banana',
+    '2b;\n I:\n  19* 3$red\n  1g* n;\n   1k*\n   a$strawberry\n r:\n  q* 5$green\n  w* 6;\n   B*\n U:\n  5$color 6$yellow\n  6$fruits n;\n   5$apple\n   6$banana',
   )
 })
 
@@ -581,18 +610,18 @@ test('decode bytes', () => {
   expect(parse('4=BCDE')).toEqual(new Uint8Array([0b00000100, 0b00100000, 0b11000100]))
   expect(parse('4=EDCB')).toEqual(new Uint8Array([0b00010000, 0b00110000, 0b10000001]))
   expect(parse('6=AQIDBA')).toEqual(new Uint8Array([1, 2, 3, 4]))
-  expect(parse(`e=ICAgICAgICAgIA`)).toEqual(new Uint8Array(10).fill(32))
-  expect(parse(`e=f39_f39_f39_fw`)).toEqual(new Uint8Array(10).fill(127))
-  expect(parse(`2=_w`)).toEqual(new Uint8Array(1).fill(255))
-  expect(parse(`3=__8`)).toEqual(new Uint8Array(2).fill(255))
-  expect(parse(`4=____`)).toEqual(new Uint8Array(3).fill(255))
-  expect(parse(`e=_____________w`)).toEqual(new Uint8Array(10).fill(255))
-  expect(parse(`f=______________8`)).toEqual(new Uint8Array(11).fill(255))
-  expect(parse(`g=________________`)).toEqual(new Uint8Array(12).fill(255))
-  expect(parse(`6=ICAgIA`)).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32))
+  expect(parse('e=ICAgICAgICAgIA')).toEqual(new Uint8Array(10).fill(32))
+  expect(parse('e=f39_f39_f39_fw')).toEqual(new Uint8Array(10).fill(127))
+  expect(parse('2=_w')).toEqual(new Uint8Array(1).fill(255))
+  expect(parse('3=__8')).toEqual(new Uint8Array(2).fill(255))
+  expect(parse('4=____')).toEqual(new Uint8Array(3).fill(255))
+  expect(parse('e=_____________w')).toEqual(new Uint8Array(10).fill(255))
+  expect(parse('f=______________8')).toEqual(new Uint8Array(11).fill(255))
+  expect(parse('g=________________')).toEqual(new Uint8Array(12).fill(255))
+  expect(parse('6=ICAgIA')).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32))
   expect(
     parse(
-      `26=aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ`,
+      '26=aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ',
     ),
   ).toEqual(
     new Uint8Array([
