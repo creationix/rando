@@ -289,40 +289,6 @@ test('encode bytes', () => {
   )
 })
 
-test('encode streaming bytes', () => {
-  const opts = { streamContainers: true }
-  expect(stringify(new Uint8Array([]), opts)).toEqual('<>')
-  expect(stringify(new Uint8Array([0]), opts)).toEqual('<AA>')
-  expect(stringify(new Uint8Array([0, 0]), opts)).toEqual('<AAA>')
-  expect(stringify(new Uint8Array([0, 0, 0]), opts)).toEqual('<AAAA>')
-  expect(stringify(new Uint8Array([0b00000100, 0b00100000, 0b11000100]), opts)).toEqual('<BCDE>')
-  expect(stringify(new Uint8Array([0b00010000, 0b00110000, 0b10000001]), opts)).toEqual('<EDCB>')
-  expect(stringify(new Uint8Array([1, 2, 3, 4]), opts)).toEqual('<AQIDBA>')
-  expect(stringify(new Uint8Array(10).fill(32), opts)).toEqual('<ICAgICAgICAgIA>')
-  expect(stringify(new Uint8Array(10).fill(127), opts)).toEqual('<f39_f39_f39_fw>')
-  expect(stringify(new Uint8Array(1).fill(255), opts)).toEqual('<_w>')
-  expect(stringify(new Uint8Array(2).fill(255), opts)).toEqual('<__8>')
-  expect(stringify(new Uint8Array(3).fill(255), opts)).toEqual('<____>')
-  expect(stringify(new Uint8Array(10).fill(255), opts)).toEqual('<_____________w>')
-  expect(stringify(new Uint8Array(11).fill(255), opts)).toEqual('<______________8>')
-  expect(stringify(new Uint8Array(12).fill(255), opts)).toEqual('<________________>')
-  expect(stringify(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32), opts)).toEqual('<ICAgIA>')
-  expect(
-    stringify(
-      new Uint8Array([
-        104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106, 221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
-        197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122, 139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
-        183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45,
-        87, 48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90,
-        166, 242, 157, 87, 37,
-      ]),
-      opts,
-    ),
-  ).toEqual(
-    '<aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ>',
-  )
-})
-
 test('encode lists', () => {
   expect(stringify([])).toEqual(';')
   expect(stringify([0])).toEqual('1;+')
@@ -333,30 +299,11 @@ test('encode lists', () => {
   expect(stringify([[[]]])).toEqual('3;1;;')
 })
 
-test('encode streaming lists', () => {
-  const opts = { streamContainers: true }
-  expect(stringify([], opts)).toEqual('[]')
-  expect(stringify([1, 2, 3], opts)).toEqual('[2+4+6+]')
-  expect(stringify([[]], opts)).toEqual('[[]]')
-  expect(stringify([[[]]], opts)).toEqual('[[[]]]')
-})
-
 test('encode objects', () => {
   expect(stringify({})).toEqual(':')
   expect(stringify({ a: 0 })).toEqual("3:a'+")
   expect(stringify({ a: 0, b: true })).toEqual("6:a'+b'!")
   expect(stringify({ a: 0, b: true, c: {} })).toEqual("9:a'+b'!c':")
-})
-
-test('encode streaming objects', () => {
-  const opts = { streamContainers: true }
-  expect(stringify({}, opts)).toEqual('{}')
-  expect(stringify({ a: 0 }, opts)).toEqual("{a'+}")
-  expect(stringify({ a: 0, b: true }, opts)).toEqual("{a'+b'!}")
-  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("{a'+b'!c'{}}")
-  expect(stringify(fruit, opts)).toEqual(
-    "[{E*red'L*[Q*a$strawberry]}{e*green'j*[o*]}{color'yellow'fruits'[apple'banana']}]",
-  )
 })
 
 test('encode maps', () => {
@@ -380,30 +327,6 @@ test('encode maps', () => {
   ).toEqual('b:;:6;2+4+6+?')
 })
 
-test('encode streaming maps', () => {
-  const opts = { streamContainers: true }
-  expect(stringify(new Map(), opts)).toEqual('{}')
-  expect(stringify(new Map([[1, 2]]), opts)).toEqual('{2+4+}')
-  expect(
-    stringify(
-      new Map<unknown, unknown>([
-        [1, 2],
-        [true, false],
-      ]),
-      opts,
-    ),
-  ).toEqual('{2+4+!~}')
-  expect(
-    stringify(
-      new Map<unknown, unknown>([
-        [[], {}],
-        [[1, 2, 3], null],
-      ]),
-      opts,
-    ),
-  ).toEqual('{[]{}[2+4+6+]?}')
-})
-
 test('encode string chains', () => {
   const opts: EncodeOptions = {
     chainMinChars: 7,
@@ -412,8 +335,6 @@ test('encode string chains', () => {
   }
   expect(stringify('/segment/segment/segment', opts)).toEqual('d,1**8$/segment')
   expect(stringify('/segment/o/n/e/segment', opts)).toEqual('k,8*6$/o/n/e8$/segment')
-  opts.streamContainers = true
-  expect(stringify('/segment/segment/segment', opts)).toEqual('(1**8$/segment)')
 })
 
 test('encode repeated values', () => {
@@ -665,38 +586,6 @@ test('decode bytes', () => {
   )
 })
 
-test('decode streaming bytes', () => {
-  expect(parse('<>')).toEqual(new Uint8Array([]))
-  expect(parse('<AA>')).toEqual(new Uint8Array([0]))
-  expect(parse('<AAA>')).toEqual(new Uint8Array([0, 0]))
-  expect(parse('<AAAA>')).toEqual(new Uint8Array([0, 0, 0]))
-  expect(parse('<BCDE>')).toEqual(new Uint8Array([0b00000100, 0b00100000, 0b11000100]))
-  expect(parse('<EDCB>')).toEqual(new Uint8Array([0b00010000, 0b00110000, 0b10000001]))
-  expect(parse('<AQIDBA>')).toEqual(new Uint8Array([1, 2, 3, 4]))
-  expect(parse('<ICAgICAgICAgIA>')).toEqual(new Uint8Array(10).fill(32))
-  expect(parse('<f39_f39_f39_fw>')).toEqual(new Uint8Array(10).fill(127))
-  expect(parse('<_w>')).toEqual(new Uint8Array(1).fill(255))
-  expect(parse('<__8>')).toEqual(new Uint8Array(2).fill(255))
-  expect(parse('<____>')).toEqual(new Uint8Array(3).fill(255))
-  expect(parse('<_____________w>')).toEqual(new Uint8Array(10).fill(255))
-  expect(parse('<______________8>')).toEqual(new Uint8Array(11).fill(255))
-  expect(parse('<________________>')).toEqual(new Uint8Array(12).fill(255))
-  expect(parse('<ICAgIA>')).toEqual(new Uint8Array([0xde, 0xad, 0xbe, 0xef]).fill(32))
-  expect(
-    parse(
-      '<aJYUduXBG2pla3pq3c4U6xw9McHqLgKExQqQra05dvDUoSl6i195ta-4WYAdQ7O5t2WispUYJZFu2efiwJDw7kTDtKE8ui1XMJXVzJGrgly_Qxz6DJenUh7H1esM51qm8p1XJQ>',
-    ),
-  ).toEqual(
-    new Uint8Array([
-      104, 150, 20, 118, 229, 193, 27, 106, 101, 107, 122, 106, 221, 206, 20, 235, 28, 61, 49, 193, 234, 46, 2, 132,
-      197, 10, 144, 173, 173, 57, 118, 240, 212, 161, 41, 122, 139, 95, 121, 181, 175, 184, 89, 128, 29, 67, 179, 185,
-      183, 101, 162, 178, 149, 24, 37, 145, 110, 217, 231, 226, 192, 144, 240, 238, 68, 195, 180, 161, 60, 186, 45, 87,
-      48, 149, 213, 204, 145, 171, 130, 92, 191, 67, 28, 250, 12, 151, 167, 82, 30, 199, 213, 235, 12, 231, 90, 166,
-      242, 157, 87, 37,
-    ]),
-  )
-})
-
 test('decode lists', () => {
   expect(parse(';')).toEqual([])
   expect(parse('1;+')).toEqual([0])
@@ -707,25 +596,11 @@ test('decode lists', () => {
   expect(parse('3;1;;')).toEqual([[[]]])
 })
 
-test('decode streaming lists', () => {
-  expect(parse('[]')).toEqual([])
-  expect(parse('[2+4+6+]')).toEqual([1, 2, 3])
-  expect(parse('[[]]')).toEqual([[]])
-  expect(parse('[[[]]]')).toEqual([[[]]])
-})
-
 test('decode objects', () => {
   expect(parse(':')).toEqual({})
   expect(parse('4:1$a+')).toEqual({ a: 0 })
   expect(parse('8:1$a+1$b!')).toEqual({ a: 0, b: true })
   expect(parse('c:1$a+1$b!1$c:')).toEqual({ a: 0, b: true, c: {} })
-})
-
-test('decode streaming objects', () => {
-  expect(parse('{}')).toEqual({})
-  expect(parse('{1$a+}')).toEqual({ a: 0 })
-  expect(parse('{1$a+1$b!}')).toEqual({ a: 0, b: true })
-  expect(parse('{1$a+1$b!1$c{}}')).toEqual({ a: 0, b: true, c: {} })
 })
 
 test('decode pointers', () => {
@@ -741,7 +616,6 @@ test('decode pointers', () => {
 test('decode string chains', () => {
   expect(parse('d,1**8$/segment')).toEqual('/segment/segment/segment')
   expect(parse('k,8*6$/o/n/e8$/segment')).toEqual('/segment/o/n/e/segment')
-  expect(parse('(1**8$/segment)')).toEqual('/segment/segment/segment')
 })
 
 test('decode known values', () => {
@@ -889,15 +763,4 @@ test('encode README values', () => {
   expect(encoded).toEqual('A:5&6&&8;3&4;2&y+1&h${"hello":"world"}')
   const decoded = parse(encoded, opts)
   expect(decoded).toEqual(httpResponse)
-})
-
-test('pretty-print stream mode', () => {
-  const options: EncodeOptions = {
-    prettyPrint: true,
-    streamContainers: true,
-  }
-  const encoded = stringify(fruit, options)
-  expect(encoded).toEqual(
-    "[\n {\n  1b* red'\n  1h* [\n   1k*\n   a$strawberry ] }\n {\n  r* green'\n  w* [\n   A* ] }\n {\n  color' yellow'\n  fruits' [\n   apple'\n   banana' ] } ]",
-  )
 })
