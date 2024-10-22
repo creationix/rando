@@ -25,6 +25,7 @@ const CHAIN = ',' // String, bytes, or regexp broken into pieces
 // Recursive Container Types
 const LIST = ';' // Multiple values in sequence
 const MAP = ':' // Multiple key-value pairs
+
 // Indexed containers:
 //   O(n) LIST become O(1) ARRAY
 //   O(n) MAP becomes O(log n) TRIE
@@ -34,10 +35,24 @@ const MAP = ':' // Multiple key-value pairs
 // this is not an exception to the grammar, but a normal frame.
 const INDEXED = '#'
 
-const LIST_BRACES = '[]'
-const MAP_BRACES = '{}'
-const CHAIN_BRACES = '()'
-const BYTES_BRACES = '<>'
+export const tags = {
+  NULL,
+  FALSE,
+  TRUE,
+  REF,
+  PTR,
+  INTEGER,
+  RATIONAL,
+  DECIMAL,
+  SEP,
+  B64_STRING,
+  STRING,
+  BYTES,
+  CHAIN,
+  LIST,
+  MAP,
+  INDEXED,
+}
 
 const binaryTypes = {
   [NULL]: 0,
@@ -74,10 +89,7 @@ export function decodeB64(buf: Uint8Array, offset = 0, end = buf.length): [numbe
     offset++
     num = num * 64n + BigInt(index)
   }
-  if (Number.isSafeInteger(Number(num))) {
-    return [Number(num), offset]
-  }
-  return [num, offset]
+  return [toNumberMaybe(num), offset]
 }
 
 // When encoding variable integers using the B64 chars, they are encoded in little endian
@@ -129,11 +141,11 @@ function encodeZigZag(num: bigint): bigint {
   return num >= 0n ? num * 2n : -1n - num * 2n
 }
 
-function decodeZigZag(num: bigint): bigint {
+export function decodeZigZag(num: bigint): bigint {
   return num & 1n ? -(num >> 1n) - 1n : num >> 1n
 }
 
-function toNumberMaybe(num: bigint | number): number | bigint {
+export function toNumberMaybe(num: bigint | number): number | bigint {
   if (Number.isSafeInteger(Number(num))) {
     return Number(num)
   }
@@ -173,7 +185,6 @@ export interface EncodeOptions {
   prettyPrint?: boolean
   knownValues?: unknown[]
   binaryHeaders?: boolean
-  streamContainers?: boolean
 }
 
 export interface DecodeOptions {
@@ -188,7 +199,6 @@ const defaults = {
   prettyPrint: false,
   knownValues: [],
   binaryHeaders: false,
-  streamContainers: false,
 }
 
 export function findStringSegments(rootVal: unknown, options: EncodeOptions = {}) {
@@ -322,7 +332,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   const prettyPrint = options.prettyPrint ?? defaults.prettyPrint
   const knownValues = options.knownValues ?? defaults.knownValues
   const binaryHeaders = options.binaryHeaders ?? defaults.binaryHeaders
-  const streamContainers = options.streamContainers ?? defaults.streamContainers
   let expectedSegments = findStringSegments(rootVal, options)
   const parts: Uint8Array[] = []
   let offset = 0
@@ -480,9 +489,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       }
 
       if (segments.length > 1) {
-        if (streamContainers) {
-          pushChars(CHAIN_BRACES[1], 0)
-        }
         depth++
         const before = offset
         for (let i = segments.length - 1; i >= 0; i--) {
@@ -490,9 +496,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
           encodeAny(segment, 0)
         }
         depth--
-        if (streamContainers) {
-          return pushChars(CHAIN_BRACES[0], trim)
-        }
         return pushHeader(CHAIN, offset - before, trim)
       }
     }
@@ -501,30 +504,18 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 
   function encodeBinary(val: Uint8Array, trim = -1) {
-    if (streamContainers) {
-      pushChars(BYTES_BRACES[1], 0)
-    }
     const start = offset
     pushBase64(val)
-    if (streamContainers) {
-      return pushChars(BYTES_BRACES[0], trim)
-    }
     return pushHeader(BYTES, offset - start, trim)
   }
 
   function encodeList(val: unknown[], trim = -1) {
-    if (streamContainers) {
-      pushChars(LIST_BRACES[1], 1)
-    }
     depth++
     const before = offset
     for (let i = val.length - 1; i >= 0; i--) {
       encodeAny(val[i])
     }
     depth--
-    if (streamContainers) {
-      return pushChars(LIST_BRACES[0], trim)
-    }
     return pushHeader(LIST, offset - before, trim)
   }
 
@@ -536,9 +527,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 
   function encodeEntries(entries: [unknown, unknown][], trim = -1) {
-    if (streamContainers) {
-      pushChars(MAP_BRACES[1], 1)
-    }
     depth++
     const before = offset
     for (let i = entries.length - 1; i >= 0; i--) {
@@ -547,9 +535,6 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       encodeAny(key)
     }
     depth--
-    if (streamContainers) {
-      return pushChars(MAP_BRACES[0], trim)
-    }
     return pushHeader(MAP, offset - before, trim)
   }
 
@@ -667,14 +652,6 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
       const bytes = parseBase64(rando.slice(offset, end))
       return [bytes, end]
     }
-    if (tag === BYTES_BRACES.charCodeAt(0)) {
-      const start = offset
-      while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) {
-        offset++
-      }
-      const bytes = parseBase64(rando.slice(start, offset))
-      return [bytes, offset + 1]
-    }
     if (tag === LIST.charCodeAt(0)) {
       // TODO: lazy parsed list
       const end = offset + Number(val)
@@ -685,15 +662,6 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
         offset = newOffset
       }
       return [list, offset]
-    }
-    if (tag === LIST_BRACES.charCodeAt(0)) {
-      const list: unknown[] = []
-      while (rando[offset] !== LIST_BRACES.charCodeAt(1)) {
-        const [item, newOffset] = decodeAny(offset)
-        list.push(item)
-        offset = newOffset
-      }
-      return [list, offset + 1]
     }
     if (tag === MAP.charCodeAt(0)) {
       // TODO: lazy parsed map
@@ -707,16 +675,6 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
       }
       return [map, offset]
     }
-    if (tag === MAP_BRACES.charCodeAt(0)) {
-      const map: Record<string, unknown> = {}
-      while (rando[offset] !== MAP_BRACES.charCodeAt(1)) {
-        const [key, newOffset] = decodeAny(offset)
-        const [value, newerOffset] = decodeAny(newOffset)
-        map[key as string] = value
-        offset = newerOffset
-      }
-      return [map, offset + 1]
-    }
     if (tag === CHAIN.charCodeAt(0)) {
       const parts: string[] = []
       const end = offset + Number(val)
@@ -726,15 +684,6 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
         offset = newOffset
       }
       return [parts.join(''), offset]
-    }
-    if (tag === CHAIN_BRACES.charCodeAt(0)) {
-      const parts: string[] = []
-      while (rando[offset] !== CHAIN_BRACES.charCodeAt(1)) {
-        const [part, newOffset] = decodeAny(offset)
-        parts.push(String(part))
-        offset = newOffset
-      }
-      return [parts.join(''), offset + 1]
     }
     if (tag === PTR.charCodeAt(0)) {
       return [decodeAny(offset + Number(val))[0], offset]
