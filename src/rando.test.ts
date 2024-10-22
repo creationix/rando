@@ -302,8 +302,8 @@ test('encode lists', () => {
 test('encode objects', () => {
   expect(stringify({})).toEqual(':')
   expect(stringify({ a: 0 })).toEqual("3:a'+")
-  expect(stringify({ a: 0, b: true })).toEqual("6:a'+b'!")
-  expect(stringify({ a: 0, b: true, c: {} })).toEqual("9:a'+b'!c':")
+  expect(stringify({ a: 0, b: true })).toEqual("6|2:a'b'+!")
+  expect(stringify({ a: 0, b: true, c: {} })).toEqual("9|3:a'b'c'+!:")
 })
 
 test('encode maps', () => {
@@ -316,7 +316,7 @@ test('encode maps', () => {
         [true, false],
       ]),
     ),
-  ).toEqual('6:2+4+!~')
+  ).toEqual('6|2:2+!4+~')
   expect(
     stringify(
       new Map<unknown, unknown>([
@@ -324,7 +324,7 @@ test('encode maps', () => {
         [[1, 2, 3], null],
       ]),
     ),
-  ).toEqual('b:;:6;2+4+6+?')
+  ).toEqual('b|2:;6;2+4+6+:?')
 })
 
 test('encode string chains', () => {
@@ -341,7 +341,7 @@ test('encode repeated values', () => {
   const l = new Array(35).fill(-2048)
   // This is big enough that __+ is duplicated once the pointer cost gets over 2 bytes
   // We only want to use pointers if they are actually smaller.
-  expect(stringify(l)).toEqual('17;__+_*Z*X*V*T*R*P*N*L*J*H*F*D*B*z*x*v*t*r*p*n*l*j*h*f*d*b*9*7*5*3*1**__+')
+  expect(stringify(l)).toEqual('17|z;__+_*Z*X*V*T*R*P*N*L*J*H*F*D*B*z*x*v*t*r*p*n*l*j*h*f*d*b*9*7*5*3*1**__+')
 })
 
 const fruit = [
@@ -351,7 +351,9 @@ const fruit = [
 ]
 
 test('encode known values', () => {
-  expect(stringify(fruit)).toEqual("1f;o:E*red'L*e;Q*a$strawberrye:e*green'j*2;o*z:color'yellow'fruits'd;apple'banana'")
+  expect(stringify(fruit)).toEqual(
+    "1l;o|2:I*M*red'e;U*a$strawberrye|2:g*k*green'2;q*z|2:color'fruits'yellow'd;apple'banana'",
+  )
   const options: EncodeOptions = {
     knownValues: [
       'color',
@@ -367,7 +369,7 @@ test('encode known values', () => {
       'strawberry',
     ],
   }
-  expect(stringify(fruit, options)).toEqual('B;b:&1&7&4;8&a&9:&4&7&2;8&b:&3&7&4;8&9&')
+  expect(stringify(fruit, options)).toEqual('H;b|2:&7&1&4;8&a&9|2:&7&4&2;8&b|2:&7&3&4;8&9&')
 })
 
 test('encode pretty-print', () => {
@@ -375,17 +377,19 @@ test('encode pretty-print', () => {
     prettyPrint: true,
   }
   expect(stringify({ int: 123, rational: 1 / 3, decimal: 1.23 }, options)).toEqual(
-    "G:\n int' 3S+\n rational' 2|3/\n decimal' 3S|3.",
+    "K|3:\n int'\n rational'\n decimal'\n\n 3S+\n 2|3/\n 3S|3.",
   )
-  expect(stringify({ bool: true, bool2: false, nil: null }, options)).toEqual("r:\n bool' !\n bool2' ~\n nil' ?")
+  expect(stringify({ bool: true, bool2: false, nil: null }, options)).toEqual(
+    "v|3:\n bool'\n bool2'\n nil'\n\n !\n ~\n ?",
+  )
   expect(stringify({ obj: {}, arr: [], chain: 'repeat/repeat/repeat' }, options)).toEqual(
-    "I:\n obj' :\n arr' ;\n chain' h,repeat'*7$/repeat",
+    "M|3:\n obj'\n arr'\n chain'\n\n :\n ;\n h,repeat'*7$/repeat",
   )
   expect(stringify({ string: 'Hello', bytes: new Uint8Array([1, 2, 3]) }, options)).toEqual(
-    "v:\n string' Hello'\n bytes' 4=AQID",
+    "y|2:\n string'\n bytes'\n\n Hello'\n 4=AQID",
   )
   expect(stringify(fruit, options)).toEqual(
-    "24;\n H:\n  17* red'\n  1d* n;\n   1g*\n   a$strawberry\n q:\n  p* green'\n  u* 6;\n   y*\n P:\n  color' yellow'\n  fruits' l;\n   apple'\n   banana'",
+    "2p;\n M|2:\n  1l*\n  1o*\n\n  red'\n  n;\n   1u*\n   a$strawberry\n v|2:\n  w*\n  A*\n\n  green'\n  6;\n   F*\n U|2:\n  color'\n  fruits'\n\n  yellow'\n  l;\n   apple'\n   banana'",
   )
 })
 
@@ -396,10 +400,10 @@ test('encode binary', () => {
   expect(encodeBinary(1234)).toEqual(new Uint8Array([197, 180, 2]))
   expect(encodeBinary(fruit)).toEqual(
     new Uint8Array([
-      236, 9, 141, 3, 244, 4, 57, 114, 101, 100, 228, 5, 236, 1, 180, 6, 169, 1, 115, 116, 114, 97, 119, 98, 101, 114,
-      114, 121, 221, 1, 212, 1, 89, 103, 114, 101, 101, 110, 164, 2, 44, 132, 3, 189, 4, 89, 99, 111, 108, 111, 114,
-      105, 121, 101, 108, 108, 111, 119, 105, 102, 114, 117, 105, 116, 115, 220, 1, 89, 97, 112, 112, 108, 101, 105, 98,
-      97, 110, 97, 110, 97,
+      156, 10, 136, 3, 45, 148, 5, 212, 5, 57, 114, 101, 100, 236, 1, 212, 6, 169, 1, 115, 116, 114, 97, 119, 98, 101,
+      114, 114, 121, 216, 1, 45, 228, 1, 164, 2, 89, 103, 114, 101, 101, 110, 44, 148, 3, 184, 4, 45, 89, 99, 111, 108,
+      111, 114, 105, 102, 114, 117, 105, 116, 115, 105, 121, 101, 108, 108, 111, 119, 220, 1, 89, 97, 112, 112, 108,
+      101, 105, 98, 97, 110, 97, 110, 97,
     ]),
   )
 })
@@ -671,7 +675,7 @@ test('encode README values', () => {
   expect(stringify('🍌')).toEqual('4$🍌')
   expect(stringify([1, 2, 3])).toEqual('6;2+4+6+')
   expect(stringify([100, 100, 100])).toEqual('6;1**38+')
-  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual("c:a'2+b'4+c'6+")
+  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual("c|3:a'b'c'2+4+6+")
   expect(stringify([{ name: 'Alice' }, { name: 'Bob' }])).toEqual("l;8:8*Alice'9:name'Bob'")
 
   const sampleDoc = {
@@ -692,7 +696,7 @@ test('encode README values', () => {
 
   const encoded1 = stringify(sampleDoc)
   expect(encoded1).toEqual(
-    "1w:person'H:name'8$John Doeage'Y+id'61O+c$ai-generated!list'a;2+4+6+8+a+6*n:b*d*nested'a:key'value'",
+    "1B|3:person'list'11*H|4:name'age'id'c$ai-generated8$John DoeY+61O+!a;2+4+6+8+a+n|2:b*nested'6*a:key'value'",
   )
 
   const decoded1 = parse(encoded1)
@@ -731,7 +735,7 @@ test('encode README values', () => {
     'user-agent',
     ['accept', 'application/json'],
   ]
-  expect(stringify(doc, { knownValues: known })).toEqual('R:&1&5&7&8&b$example.com9&d&a&b&e&j;h&f;g&b$Mozilla/5.0')
+  expect(stringify(doc, { knownValues: known })).toEqual('R|6:&5&8&9&a&e&1&7&b$example.comd&b&j;h&f;g&b$Mozilla/5.0')
 
   // Some common values in an http response that
   // both sides know about (similar to HTTP2 HPACK)
@@ -760,7 +764,7 @@ test('encode README values', () => {
     body,
   }
   const encoded = stringify(httpResponse, opts)
-  expect(encoded).toEqual('A:5&6&&8;3&4;2&y+1&h${"hello":"world"}')
+  expect(encoded).toEqual('A|3:5&&1&6&8;3&4;2&y+h${"hello":"world"}')
   const decoded = parse(encoded, opts)
   expect(decoded).toEqual(httpResponse)
 })
