@@ -288,35 +288,3 @@ console.log(Rando.stringify(fruit, { prettyPrint: true }))
 //    apple'
 //    banana'
 ```
-
-### Streaming Mode
-
-In some cases you don't intend to use this for random access, but still want access to the deduplication, binary, or other features of the format.  For those use cases, you can enable streaming mode with replaces the length-prefix from containers to use delimiters instead.
-
-```js
-// Continued from above...
-
-// Compact Streaming Rando
-console.log(Rando.stringify(fruit, { streamContainers: true }))
-// [{E*red'L*[Q*a$strawberry]}{e*green'j*[o*]}{color'yellow'fruits'[apple'banana']}]
-
-// Pretty Streaming Rando
-console.log(Rando.stringify(fruit, { streamContainers: true, prettyPrint: true }))
-// [
-//  {
-//   1b* red'
-//   1h* [
-//    1k*
-//    a$strawberry ] }
-//  {
-//   r* green'
-//   w* [
-//    A* ] }
-//  {
-//   color' yellow'
-//   fruits' [
-//    apple'
-//    banana' ] } ]
-```
-
-One interesting property of streaming mode is the doc is a lot less sensitive to whitespace changes.  If you also disabled use of pointers, you would free to hand-edit the document since nothing would be offsets or lengths covering the modified whitespace.
