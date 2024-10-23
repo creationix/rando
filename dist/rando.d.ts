@@ -1,13 +1,34 @@
+export declare const tags: {
+    NULL: string;
+    FALSE: string;
+    TRUE: string;
+    REF: string;
+    PTR: string;
+    INTEGER: string;
+    RATIONAL: string;
+    DECIMAL: string;
+    SEP: string;
+    B64_STRING: string;
+    STRING: string;
+    BYTES: string;
+    CHAIN: string;
+    LIST: string;
+    MAP: string;
+};
 export declare function decodeB64(buf: Uint8Array, offset?: number, end?: number): [number | bigint, number];
 export declare function encodeB64(num: bigint | number): number[];
+export declare function decodeZigZag(num: bigint): bigint;
+export declare function toNumberMaybe(num: bigint | number): number | bigint;
 export declare function splitDecimal(val: number): (number | bigint)[];
 export interface EncodeOptions {
+    blockSize?: number;
+    mapCountedLimit?: number;
+    listCountedLimit?: number;
     chainMinChars?: number;
     chainSplitter?: RegExp;
     prettyPrint?: boolean;
     knownValues?: unknown[];
     binaryHeaders?: boolean;
-    streamContainers?: boolean;
 }
 export interface DecodeOptions {
     knownValues?: unknown[];
