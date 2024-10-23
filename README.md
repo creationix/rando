@@ -33,7 +33,11 @@ Rando is a new serialization format optimized for fast random access of unstruct
 |                                    `1/0` |                                 N/A | `2\|/`                       | Infinity            |
 |                                   `-1/0` |                                 N/A | `1\|/`                       | -Infinity           |
 |                                    `0/0` |                                 N/A | `\|/`                        | NaN                 |
-|                                `3.14159` |                           `3.14159` | `2ppu\|9.`                   | Decimal             |
+|                                  `20.24` |                             `20.24` | `_g\|3.`                     | Decimal             |
+|                                  `1e100` |                             `1e100` | `2\|38.`                     |                     |
+|                                `-1e-200` |                           `-1e-200` | `1\|6f.`                     |                     |
+|                                `Math.PI` |                 `3.141592653589793` | `mkEokiJF2\|t.`              |                     |
+|                           `Math.sqrt(3)` |                `1.7320508075688772` | `1X4t8mn8q8\|v.`             |                     |
 |                                   `true` |                              `true` | `!`                          | True                |
 |                                  `false` |                             `false` | `~`                          | False               |
 |                                   `null` |                              `null` | `?`                          | Null                |
