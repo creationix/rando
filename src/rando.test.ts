@@ -858,7 +858,7 @@ test('encode README values', () => {
 
 test('encode README tables', () => {
   const samples: [string, string?, EncodeOptions?][] = [
-    ['0', 'Zigzag Integers (val)'],
+    ['0', 'Integers ( zigzag(val) )'],
     ['1'],
     ['10'],
     ['100'],
