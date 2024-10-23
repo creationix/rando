@@ -290,41 +290,94 @@ test('encode bytes', () => {
 })
 
 test('encode lists', () => {
-  expect(stringify([])).toEqual(';')
-  expect(stringify([0])).toEqual('1;+')
-  expect(stringify([0, true])).toEqual('2;+!')
-  expect(stringify([0, true, false])).toEqual('3;+!~')
-  expect(stringify([1, 2, 3])).toEqual('6;2+4+6+')
-  expect(stringify([[]])).toEqual('1;;')
-  expect(stringify([[[]]])).toEqual('3;1;;')
+  // First encode non-counted lists
+  const opts: EncodeOptions = { listCountedLimit: Infinity }
+  expect(stringify([], opts)).toEqual(';')
+  expect(stringify([0], opts)).toEqual('1;+')
+  expect(stringify([0, true], opts)).toEqual('2;+!')
+  expect(stringify([0, true, false], opts)).toEqual('3;+!~')
+  expect(stringify([1, 2, 3], opts)).toEqual('6;2+4+6+')
+  expect(stringify([[]], opts)).toEqual('1;;')
+  expect(stringify([[[]]], opts)).toEqual('3;1;;')
+  expect(stringify([[[]], [[], []], [[], [], []]], opts)).toEqual('c;1;;2;;;3;;;;')
+  // Then encode as counted lists
+  opts.listCountedLimit = -1
+  expect(stringify([], opts)).toEqual('|;')
+  expect(stringify([0], opts)).toEqual('1|1;+')
+  expect(stringify([0, true], opts)).toEqual('2|2;+!')
+  expect(stringify([0, true, false], opts)).toEqual('3|3;+!~')
+  expect(stringify([1, 2, 3], opts)).toEqual('6|3;2+4+6+')
+  expect(stringify([[]], opts)).toEqual('2|1;|;')
+  expect(stringify([[[]]], opts)).toEqual('6|1;2|1;|;')
+  expect(stringify([[[]], [[], []], [[], [], []]], opts)).toEqual('o|3;2|1;|;4|2;|;|;6|3;|;|;|;')
+  // Then encode with a partial limit
+  opts.listCountedLimit = 2
+  expect(stringify([], opts)).toEqual(';')
+  expect(stringify([0], opts)).toEqual('1;+')
+  expect(stringify([0, true], opts)).toEqual('2;+!')
+  expect(stringify([0, true, false], opts)).toEqual('3|3;+!~')
+  expect(stringify([1, 2, 3], opts)).toEqual('6|3;2+4+6+')
+  expect(stringify([[]], opts)).toEqual('1;;')
+  expect(stringify([[[]]], opts)).toEqual('3;1;;')
+  expect(stringify([[[]], [[], []], [[], [], []]], opts)).toEqual('e|3;1;;2;;;3|3;;;;')
+  // Encode pretty-printed
+  opts.prettyPrint = true
+  expect(stringify([], opts)).toEqual(';')
+  expect(stringify([0], opts)).toEqual('3;\n +')
+  expect(stringify([0, true], opts)).toEqual('6;\n +\n !')
+  expect(stringify([0, true, false], opts)).toEqual('9|3;\n +\n !\n ~')
+  expect(stringify([1, 2, 3], opts)).toEqual('c|3;\n 2+\n 4+\n 6+')
+  expect(stringify([[]], opts)).toEqual('3;\n ;')
+  expect(stringify([[[]]], opts)).toEqual('8;\n 4;\n  ;')
+  expect(stringify([[[]], [[], []], [[], [], []]], opts)).toEqual('C|3;\n 4;\n  ;\n 8;\n  ;\n  ;\n c|3;\n  ;\n  ;\n  ;')
 })
 
-test('encode objects', () => {
-  expect(stringify({})).toEqual(':')
-  expect(stringify({ a: 0 })).toEqual("3:a'+")
-  expect(stringify({ a: 0, b: true })).toEqual("6|2:a'b'+!")
-  expect(stringify({ a: 0, b: true, c: {} })).toEqual("9|3:a'b'c'+!:")
-})
-
-test('encode maps', () => {
-  expect(stringify(new Map())).toEqual(':')
-  expect(stringify(new Map([[1, 2]]))).toEqual('4:2+4+')
-  expect(
-    stringify(
-      new Map<unknown, unknown>([
-        [1, 2],
-        [true, false],
-      ]),
-    ),
-  ).toEqual('6|2:2+!4+~')
-  expect(
-    stringify(
-      new Map<unknown, unknown>([
-        [[], {}],
-        [[1, 2, 3], null],
-      ]),
-    ),
-  ).toEqual('b|2:;6;2+4+6+:?')
+test('encode objects and maps', () => {
+  const complexMap = new Map<unknown, unknown>([
+    [true, 0],
+    [false, 1],
+    [null, 2],
+    [[], 3],
+    [{}, 4],
+    [5, 'five'],
+  ])
+  // First encode non-counted objects
+  const opts: EncodeOptions = { mapCountedLimit: Infinity }
+  expect(stringify({}, opts)).toEqual(':')
+  expect(stringify({ a: 0 }, opts)).toEqual("3:a'+")
+  expect(stringify({ a: 0, b: true }, opts)).toEqual("6:a'+b'!")
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("9:a'+b'!c':")
+  expect(stringify(new Map(), opts)).toEqual(':')
+  expect(stringify(new Map([[1, 2]]), opts)).toEqual('4:2+4+')
+  expect(stringify(complexMap, opts)).toEqual("l:!+~2+?4+;6+:8+a+five'")
+  // Then encode as counted (keys should come grouped together first)
+  opts.mapCountedLimit = -1
+  expect(stringify({}, opts)).toEqual('|:')
+  expect(stringify({ a: 0 }, opts)).toEqual("3|1:a'+")
+  expect(stringify({ a: 0, b: true }, opts)).toEqual("6|2:a'b'+!")
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("a|3:a'b'c'+!|:")
+  expect(stringify(new Map(), opts)).toEqual('|:')
+  expect(stringify(new Map([[1, 2]]), opts)).toEqual('4|1:2+4+')
+  expect(stringify(complexMap, opts)).toEqual("m|6:!~?;|:a++2+4+6+8+five'")
+  // Then encode with a sane limit
+  opts.mapCountedLimit = 1
+  expect(stringify({}, opts)).toEqual(':')
+  expect(stringify({ a: 0 }, opts)).toEqual("3:a'+")
+  expect(stringify({ a: 0, b: true }, opts)).toEqual("6|2:a'b'+!")
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("9|3:a'b'c'+!:")
+  expect(stringify(new Map(), opts)).toEqual(':')
+  expect(stringify(new Map([[1, 2]]), opts)).toEqual('4:2+4+')
+  expect(stringify(complexMap, opts)).toEqual("l|6:!~?;:a++2+4+6+8+five'")
+  // Encode pretty-printed
+  opts.prettyPrint = true
+  expect(stringify({}, opts)).toEqual(':')
+  expect(stringify({ a: 0 }, opts)).toEqual("6:\n a' +")
+  expect(stringify({ a: 0, b: true }, opts)).toEqual("f|2:\n a'\n b'\n\n +\n !")
+  expect(stringify({ a: 0, b: true }, { ...opts, mapCountedLimit: Infinity })).toEqual("c:\n a' +\n b' !")
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("m|3:\n a'\n b'\n c'\n\n +\n !\n :")
+  expect(stringify(new Map(), opts)).toEqual(':')
+  expect(stringify(new Map([[1, 2]]), opts)).toEqual('7:\n 2+ 4+')
+  expect(stringify(complexMap, opts)).toEqual("K|6:\n !\n ~\n ?\n ;\n :\n a+\n\n +\n 2+\n 4+\n 6+\n 8+\n five'")
 })
 
 test('encode string chains', () => {
@@ -591,6 +644,7 @@ test('decode bytes', () => {
 })
 
 test('decode lists', () => {
+  // Decode uncounted lists
   expect(parse(';')).toEqual([])
   expect(parse('1;+')).toEqual([0])
   expect(parse('2;+!')).toEqual([0, true])
@@ -598,13 +652,63 @@ test('decode lists', () => {
   expect(parse('6;2+4+6+')).toEqual([1, 2, 3])
   expect(parse('1;;')).toEqual([[]])
   expect(parse('3;1;;')).toEqual([[[]]])
+  expect(parse('c;1;;2;;;3;;;;')).toEqual([[[]], [[], []], [[], [], []]])
+
+  // Decode always counted lists
+  expect(parse('|;')).toEqual([])
+  expect(parse('1|1;+')).toEqual([0])
+  expect(parse('2|2;+!')).toEqual([0, true])
+  expect(parse('3|3;+!~')).toEqual([0, true, false])
+  expect(parse('6|3;2+4+6+')).toEqual([1, 2, 3])
+  expect(parse('2|1;|;')).toEqual([[]])
+  expect(parse('6|1;2|1;|;')).toEqual([[[]]])
+  expect(parse('o|3;2|1;|;4|2;|;|;6|3;|;|;|;')).toEqual([[[]], [[], []], [[], [], []]])
+
+  // decode partially counted lists
+  expect(parse('e|3;1;;2;;;3|3;;;;')).toEqual([[[]], [[], []], [[], [], []]])
+
+  // decode pretty-printed lists
+  expect(parse('3;\n +')).toEqual([0])
+  expect(parse('6;\n +\n !')).toEqual([0, true])
+  expect(parse('9|3;\n +\n !\n ~')).toEqual([0, true, false])
+  expect(parse('c|3;\n 2+\n 4+\n 6+')).toEqual([1, 2, 3])
+  expect(parse('3;\n ;')).toEqual([[]])
+  expect(parse('8;\n 4;\n  ;')).toEqual([[[]]])
+  expect(parse('C|3;\n 4;\n  ;\n 8;\n  ;\n  ;\n c|3;\n  ;\n  ;\n  ;')).toEqual([[[]], [[], []], [[], [], []]])
 })
 
-test('decode objects', () => {
+test('decode objects and maps', () => {
+  const complexMap = new Map<unknown, unknown>([
+    [true, 0],
+    [false, 1],
+    [null, 2],
+    [[], 3],
+    [{}, 4],
+    [5, 'five'],
+  ])
+  // decode non-counted objects
   expect(parse(':')).toEqual({})
-  expect(parse('4:1$a+')).toEqual({ a: 0 })
-  expect(parse('8:1$a+1$b!')).toEqual({ a: 0, b: true })
-  expect(parse('c:1$a+1$b!1$c:')).toEqual({ a: 0, b: true, c: {} })
+  expect(parse("3:a'+")).toEqual({ a: 0 })
+  expect(parse("6:a'+b'!")).toEqual({ a: 0, b: true })
+  expect(parse("9:a'+b'!c':")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('4:2+4+')).toEqual(new Map([[1, 2]]))
+  expect(parse("l:!+~2+?4+;6+:8+a+five'")).toEqual(complexMap)
+  // decode counted objects
+  expect(parse('|:')).toEqual({})
+  expect(parse("3|1:a'+")).toEqual({ a: 0 })
+  expect(parse("6|2:a'b'+!")).toEqual({ a: 0, b: true })
+  expect(parse("a|3:a'b'c'+!|:")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('4|1:2+4+')).toEqual(new Map([[1, 2]]))
+  expect(parse("m|6:!~?;|:a++2+4+6+8+five'")).toEqual(complexMap)
+  // Decode with mixed limits
+  expect(parse("9|3:a'b'c'+!:")).toEqual({ a: 0, b: true, c: {} })
+  // Decode pretty-printed
+  expect(parse(':')).toEqual({})
+  expect(parse("6:\n a' +")).toEqual({ a: 0 })
+  expect(parse("f|2:\n a'\n b'\n\n +\n !")).toEqual({ a: 0, b: true })
+  expect(parse("m|3:\n a'\n b'\n c'\n\n +\n !\n :")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('7:\n 2+ 4+')).toEqual(new Map([[1, 2]]))
+  expect(parse("K|6:\n !\n ~\n ?\n ;\n :\n a+\n\n +\n 2+\n 4+\n 6+\n 8+\n five'")).toEqual(complexMap)
 })
 
 test('decode pointers', () => {
@@ -653,23 +757,6 @@ test('decode values with whitespace', () => {
 })
 
 test('encode README values', () => {
-  expect(stringify(0)).toEqual('+')
-  expect(stringify(1)).toEqual('2+')
-  expect(stringify(10)).toEqual('k+')
-  expect(stringify(100)).toEqual('38+')
-  expect(stringify(1000)).toEqual('vg+')
-  expect(stringify(-1)).toEqual('1+')
-  expect(stringify(-10)).toEqual('j+')
-  expect(stringify(-100)).toEqual('37+')
-  expect(stringify(-1000)).toEqual('vf+')
-  expect(stringify(0.13)).toEqual('q|3.')
-  expect(stringify(0.03333333333333333)).toEqual('2|u/')
-  // biome-ignore lint/suspicious/noApproximativeNumericConstant: not exactly PI on purpose
-  expect(stringify(3.14159)).toEqual('2ppu|9.')
-  expect(stringify(true)).toEqual('!')
-  expect(stringify(false)).toEqual('~')
-  expect(stringify(null)).toEqual('?')
-  expect(stringify('')).toEqual('$')
   expect(stringify('Banana')).toEqual("Banana'")
   expect(stringify('Hi, World')).toEqual('9$Hi, World')
   expect(stringify('🍌')).toEqual('4$🍌')
@@ -767,4 +854,108 @@ test('encode README values', () => {
   expect(encoded).toEqual('A|3:5&&1&6&8;3&4;2&y+h${"hello":"world"}')
   const decoded = parse(encoded, opts)
   expect(decoded).toEqual(httpResponse)
+})
+
+test('encode README tables', () => {
+  const samples: [string, string?, EncodeOptions?][] = [
+    ['0', 'Zigzag Integers (val)'],
+    ['1'],
+    ['10'],
+    ['100'],
+    ['1000'],
+    ['-1'],
+    ['-10'],
+    ['-100'],
+    ['-1000'],
+    ['0.03333333333333333', 'Rational ( zigzag(num) dem )'],
+    ['3.14159', 'Decimal ( zigzag(base) zigzag(exponent) )'],
+    ['true', 'True'],
+    ['false', 'False'],
+    ['null', 'Null'],
+    ['""', 'Empty String'],
+    ['"Banana"', 'B64 String'],
+    ['"Hi, World"', 'String'],
+    ['"🍌"', 'UTF-8 String'],
+    ['[1,2,3]', 'Lists', { listCountedLimit: Infinity }],
+    ['[100,100,100]', 'Lists with Pointers (repeats)'],
+    ['[1,2,3]', 'Counted Lists', { listCountedLimit: 1 }],
+    ['{"a":1,"b":2,"c":3}', 'Maps', { mapCountedLimit: Infinity }],
+    ['{"a":1,"b":2,"c":3}', 'Counted Maps', { mapCountedLimit: 1 }],
+    ['[{"name":"Alice"},{"name":"Bob"}]', 'Maps and Lists with Pointers'],
+  ]
+  const table: string[] = []
+  const opts: EncodeOptions = {}
+  for (const [json, desc, newOpts] of samples) {
+    if (newOpts) {
+      Object.assign(opts, newOpts)
+    }
+    const val = JSON.parse(json)
+    const encoded = stringify(val, opts)
+    const input = `\`${json}\``
+    const output = `\`${encoded}\``
+    table.push(`| ${input.padStart(35)} | ${output.replace(/\|/g, '\\|').padEnd(28)} | ${(desc ?? '').padEnd(30)} |`)
+  }
+  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
+  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
+  console.log(table.join('\n'))
+  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
+  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
+  console.log(
+    stringify({
+      person: {
+        name: 'John Doe',
+        age: 30,
+        id: 12345,
+        'ai-generated': true,
+      },
+      list: [1, 2, 3, 4, 5],
+      nested: {
+        key: 'value',
+        nested: {
+          key: 'value',
+        },
+      },
+    }),
+  )
+
+  const obj1 = {
+    method: 'GET',
+    scheme: 'https',
+    host: 'example.com',
+    port: 443,
+    path: '/',
+    headers: [
+      ['accept', 'application/json'],
+      ['user-agent', 'Mozilla/5.0'],
+    ],
+  }
+  const known1 = [
+    'method',
+    'GET',
+    'POST',
+    'PUT',
+    'DELETE',
+    'scheme',
+    'http',
+    'https',
+    'host',
+    'port',
+    'path',
+    '/',
+    80,
+    443,
+    'headers',
+    'accept',
+    'user-agent',
+    ['accept', 'application/json'],
+  ]
+  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
+  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
+  console.log(stringify(obj1, { knownValues: known1 }))
+  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
+  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
+  console.log(stringify(fruit))
+  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
+  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
+  console.log(stringify(fruit, { prettyPrint: true }))
 })
