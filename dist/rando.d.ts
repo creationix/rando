@@ -24,7 +24,6 @@ export declare const binaryTypes: {
     "+": number;
     "/": number;
     ".": number;
-    "'": number;
     $: number;
     "=": number;
     ",": number;
@@ -54,6 +53,7 @@ export declare function findStringSegments(rootVal: unknown, options?: EncodeOpt
     [val: string]: number;
 };
 export declare function continuedFractionApproximation(num: number, maxIterations?: number, tolerance?: number): number[];
+export declare function encodeLeb128(num: bigint): number[];
 export declare function sameShape(a: unknown, b: unknown): any;
 export declare function encodeBinary(rootVal: unknown, options?: EncodeOptions): Uint8Array;
 export declare function stringify(rootVal: unknown, options?: EncodeOptions): string;
