@@ -15,6 +15,23 @@ export declare const tags: {
     LIST: string;
     MAP: string;
 };
+export declare const binaryTypes: {
+    "?": number;
+    "~": number;
+    "!": number;
+    "&": number;
+    "*": number;
+    "+": number;
+    "/": number;
+    ".": number;
+    "'": number;
+    $: number;
+    "=": number;
+    ",": number;
+    ";": number;
+    ":": number;
+    "|": number;
+};
 export declare function decodeB64(buf: Uint8Array, offset?: number, end?: number): [number | bigint, number];
 export declare function encodeB64(num: bigint | number): number[];
 export declare function decodeZigZag(num: bigint): bigint;
