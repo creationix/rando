@@ -6,6 +6,17 @@
 | ------------------------------------------- | ----------------------------------------- |
 | ![Rando Logo for Light](img/logo-light.svg) | ![Rando Logo for Dark](img/logo-dark.svg) |
 
+- [Rando - An Exciting Serialization Format](#rando---an-exciting-serialization-format)
+  - [Basic Usage](#basic-usage)
+  - [Supported Types](#supported-types)
+    - [Boolean and Null](#boolean-and-null)
+    - [Numbers](#numbers)
+    - [Strings and Binary](#strings-and-binary)
+    - [Lists (aka Arrays)](#lists-aka-arrays)
+    - [Maps (aka Objects)](#maps-aka-objects)
+    - [Pointers and References](#pointers-and-references)
+  - [Lazy Block Fetches](#lazy-block-fetches)
+
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
 |                                JSON | Rando                        | Comment                                   |
@@ -34,6 +45,7 @@ Rando is a new serialization format optimized for fast random access of unstruct
 |               `{"a":1,"b":2,"c":3}` | `c:a'2+b'4+c'6+`             | Maps                                      |
 |               `{"a":1,"b":2,"c":3}` | `c\|3:a'b'c'2+4+6+`          | Counted Maps                              |
 | `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice'9:name'Bob'` | Maps and Lists with Pointers              |
+
 Use Rando anywhere you might use JSON if the following are true:
 
 - You don't want to always parse everything when reading documents
@@ -92,161 +104,114 @@ The decoded value in JavaScript is lazy parsed so it should be very fast even fo
 
 The basic types in JSON are supported along with automatically base64 encoded binary data.
 
-```
-integer:      zigzag(number) `+`
-rational:     zigzag(numerator) `|` denominator `/`
-decimal:      zigzag(base) `|` zigzag(exponent) `.`
-pointer:      offset `*`
-reference:    index `&`
-true:         `!`
-false:        `~`
-null:         `?`
-string:       len `$` utf-8-data
-bytes:        len `=` base64-data
-chain:        len `,` string-like-value*
-list:         len `;` value*
-counted-list: len `|` count `;` value*
-map:          len `:` key/value*
-counted-map:  len `|` count `:` key* value*
-array:        len `|` count `#` width `;` array-index value*
-trie:         len `|` count `#` width `;` trie-index key* value*
-```
+### Boolean and Null
 
-### Pointers
-
-Rando does automatic de-duplication of strings and numbers within a value. For example the JS value `[100,100,100]` can be encoded as `6;1**38+` which means:
+These three primitives have a dedicated symbol each.
 
 ```
-6[    -- List with 6 bytes of body
-  1*  -- Pointer to value at 1 byte offset from end of this value
-  *   -- Pointer to value at 0 byte offset from end of this value
-  38+ -- Positive integer 100
+        true:  `!`
+       false:  `~`
+        null:  `?`
 ```
 
-It's up to encoders to discover duplicates and decide when to use pointers and when to encode the values again. The algorithm in this implementation is simple. It deduplicates numbers and strings if the size of the encoded pointer would be less bytes than encoding the value itself.
+### Numbers
 
-A more expensive algorithm could do deep comparisions against other objects and deduplicate any that have identical structures.
-
-### References
-
-In addition to pointers, rando can point to an index into an external shared list of values. These are much more compact since the value never needs to be stored in the document once and the numerical offsets are indices instead of byte offsets and so tend to be much smaller.
-
-For example, consider encoding this object:
-
-```js
-{
-  method: 'GET',
-  scheme: 'https',
-  host: 'example.com',
-  port: 443,
-  path: '/',
-  headers: [
-    ['accept', 'application/json'],
-    ['user-agent', 'Mozilla/5.0'],
-  ],
-}
-```
-
-With this shared set of known values:
-
-```js
-[
-  'method',
-  'GET',
-  'POST',
-  'PUT',
-  'DELETE',
-  'scheme',
-  'http',
-  'https',
-  'host',
-  'port',
-  'path',
-  '/',
-  80,
-  443,
-  'headers',
-  'accept',
-  'user-agent',
-  ['accept', 'application/json'],
-]
-```
-
-This yields the following rando encoding which is about 1/3 the size JSON would be.
+Numbers are encoded using three different types to optimize for common values.
 
 ```
-R|6:&5&8&9&a&e&1&7&b$example.comd&b&j;h&f;g&b$Mozilla/5.0
+     integer:  zigzag(number) `+`
+    rational:  zigzag(numerator) `|` denominator `/`
+     decimal:  zigzag(base) `|` zigzag(exponent) `.`
 ```
 
-### Pretty Printed Mode
+Integer uses zigzag encoding so small negative values are short, but we can encode arbitrary precision using any number of digits.
 
-Technically rando allows whitespace before any b64 digit.  The offsets need to take this into account, but it does make for an easier to read version when learning the format or trying to see how it encodes things.  For example, the fruit example from the tests.
+Rational works great for values like `0.33333333333333333` that encode as `1/3`.  Also rational allows encoding `Infinity`, `-Infinity`, and `NaN` as `1/0`, `-1/0` and `0/0`.
 
-```js
-import * as Rando from "@creationix/rando"
+Decimal powers of 10 as typically written in scientific notation.  `10000000000` is `1e10`, not powers of 2 like `double` or `float`.
 
-const fruit = [
-  { color: 'red', fruits: ['apple', 'strawberry'] },
-  { color: 'green', fruits: ['apple'] },
-  { color: 'yellow', fruits: ['apple', 'banana'] },
-]
+### Strings and Binary
 
-// Pretty Printed JSON
-console.log(JSON.stringify(fruit, null, 1))
-// [
-//  {
-//   "color": "red",
-//   "fruits": [
-//    "apple",
-//    "strawberry"
-//   ]
-//  },
-//  {
-//   "color": "green",
-//   "fruits": [
-//    "apple"
-//   ]
-//  },
-//  {
-//   "color": "yellow",
-//   "fruits": [
-//    "apple",
-//    "banana"
-//   ]
-//  }
-// ]
+Rando can encode unicode strings using UTF-8 as well as arbitrary binary data using base64.
 
-// Compact JSON
-console.log(JSON.stringify(fruit))
-// [{"color":"red","fruits":["apple","strawberry"]},{"color":"green","fruits":["apple"]},{"color":"yellow","fruits":["apple","banana"]}]
+Since strings are so common in most data sets a few special types exist to shave the bytes.
 
-// Compact Rando
-console.log(Rando.stringify(fruit))
-// 1l;o|2:I*M*red'e;U*a$strawberrye|2:g*k*green'2;q*z|2:color'fruits'yellow'd;apple'banana'
-
-// Pretty Rando
-// 2p;
-//  M|2:
-//   1l*
-//   1o*
-//
-//   red'
-//   n;
-//    1u*
-//    a$strawberry
-//  v|2:
-//   w*
-//   A*
-//
-//   green'
-//   6;
-//    F*
-//  U|2:
-//   color'
-//   fruits'
-//
-//   yellow'
-//   l;
-//    apple'
-//    banana'
 ```
+  b64-string:  b64String `'`
+ utf8-string:  len `$` utf-8-data
+       bytes:  len `=` base64-data
+       chain:  len `,` ( b64-string | string | bytes | pointer | reference | chain )*
+```
+
+### Lists (aka Arrays)
+
+Lists are zero or more arbitrary values that can be encoded in three levels of verboseness.
+
+```
+        list:  len                     `;`             value*
+counted-list:  len `|` count           `;`             value*
+indexed-list:  len `|` count `|` width `;` array-index value*
+```
+
+The first has `O(n)` costs to find an item and `O(n)` costs to count the items.
+
+By adding a count we reduce the cost of counting to `O(1)`
+
+By also adding the array index we reduce the cost of indexing an item to `O(1)`
+
+### Maps (aka Objects)
+
+Maps are zero or more pairs of arbitrary values that can also be encoded in three levels of verboseness.
+
+Note that keys are not limited to strings.
+
+```
+        map:   len                     `:`            (key value)*
+counted-map:   len `|` count           `:`            key* value*
+indexed-map:   len `|` count `|` width `:` trie-index key* value*
+```
+
+The first has `O(n)` costs to find a key, and if the value is huge, this may require fetching multiple blocks.
+
+By adding a count, we're able to move the keys up-front where they are more likely to be contained in the same block.
+
+Then by adding an index, we reduce lookup costs to `O(log n)` time.
+
+### Pointers and References
+
+One method rando can use to speed up decoding and reduce serialized size is to de-duplicate seen or known values.
+
+```
+     pointer:  offset `*`
+   reference:  index `&`
+```
+
+A `pointer` points to a value `seen` later in the document. Since Rando encodes back to front, these are values that have already been `seen` while encoding.
+
+To decode a pointer, add `offset` bytes after the `*` and decode again.
+
+By default, Rando will not use pointers to references values across block boundaries.
+
+A `reference` is a zero based index into an external array of `known` values provided by the caller of both the encoder and decoder.
+
+It's up to the user of the library to ensure that the same list is used for both sides.
+
+## Lazy Block Fetches
+
+Rando is designed on the principle that it might be used for cases where the document is so large that the client doesn't want to download the entire thing before starting to read it.
+
+This is why the various optimizations take into account the `blockSize` encoding option.
+
+- Pointers ensure that they never point to data in another block
+- Lists automatically add count if the number of items exceeds the `listCountThreshold` encoding option.
+- Lists automatically add indices if the encoded values are larger than one block.
+- Maps automatically add count if the encoded key/value pairs are larger than one block.
+- Maps automatically add indices if either the number of keys exceeds the `mapCountThreshold` encoding option or the encoded keys alone are larger than one block.
+
+With this in mind, rando is designed to be used with a system that has a block-level caching proxy.
+
+- The decoder will read arbitrary byte slices our of the document as needed
+- The block system will translate these reads to block aligned reads (possibly spanning more than one block in a single read)
+- The block system will cache fetched blocks so that future reads that expand to the same block don't fetch it again.
+
+One common method for hosting these files is a normal HTTP server that supports range requests.
