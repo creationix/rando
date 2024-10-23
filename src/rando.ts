@@ -46,7 +46,7 @@ export const tags = {
   MAP,
 }
 
-const binaryTypes = {
+export const binaryTypes = {
   [NULL]: 0,
   [FALSE]: 1,
   [TRUE]: 2,
@@ -397,7 +397,11 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 
   function pushHeaderBinary(type: string, value: number | bigint) {
-    const num = BigInt(value) * 16n + BigInt(binaryTypes[type])
+    const typeCode = binaryTypes[type]
+    if (typeof typeCode !== 'number') {
+      throw new Error(`Invalid type '${type}'`)
+    }
+    const num = BigInt(value) * 16n + BigInt(typeCode)
     return pushRaw(new Uint8Array(encodeLeb128(num)))
   }
 
@@ -511,7 +515,11 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
 
   function encodeBinary(val: Uint8Array, trim = -1) {
     const start = offset
-    pushBase64(val)
+    if (binaryHeaders) {
+      pushRaw(val)
+    } else {
+      pushBase64(val)
+    }
     return pushHeader(BYTES, offset - start, trim)
   }
 
@@ -580,7 +588,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       const s = seen.get(val)
       const dist = offset - s.offset
       const cost = binaryHeaders
-        ? Math.max(0, Math.ceil(Math.log2(dist) / Math.log2(128)))
+        ? Math.max(0, Math.ceil(Math.log2(dist * 16) / Math.log2(128)))
         : Math.max(0, Math.ceil(Math.log2(dist) / Math.log2(64))) + 1
       // Only use pointers when it actually saves space and points within the same block
       if (cost < s.written && getBlock(blockSize, offset + cost) === getBlock(blockSize, s.offset)) {
