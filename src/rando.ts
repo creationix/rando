@@ -24,7 +24,9 @@ const CHAIN = ',' // String, bytes, or regexp broken into pieces
 
 // Recursive Container Types
 const LIST = ';' // Multiple values in sequence
+// If SEP is present, val2 is count of items
 const MAP = ':' // Multiple key-value pairs
+// if SEP is present, it's keys first format and val2 is count of keys
 
 // Indexed containers:
 //   O(n) LIST become O(1) ARRAY
@@ -180,6 +182,8 @@ export function splitDecimal(val: number) {
 }
 
 export interface EncodeOptions {
+  mapCountedLimit?: number // The max count of map keys allowed before a length is encoded and keys are put first
+  listCountedLimit?: number // The max count of list items allowed before a length is encoded
   chainMinChars?: number
   chainSplitter?: RegExp
   prettyPrint?: boolean
@@ -191,9 +195,11 @@ export interface DecodeOptions {
   knownValues?: unknown[]
 }
 
-const defaults = {
+const defaults: Required<EncodeOptions> = {
   // Chain defaults were found by brute forcing all combinations on several datasets
   // But they can be adjusted for specific data for fine tuning.
+  mapCountedLimit: 1,
+  listCountedLimit: 10,
   chainMinChars: 7,
   chainSplitter: /([^a-zA-Z0-9-_]*[a-zA-Z0-9-_]+)/,
   prettyPrint: false,
@@ -327,6 +333,8 @@ export function stringify(rootVal: unknown, options: EncodeOptions = {}) {
 const base64Str = /^[a-zA-Z1-9-_][a-zA-Z0-9-_]{0,7}$/
 
 export function encode(rootVal: unknown, options: EncodeOptions = {}) {
+  const mapCountedLimit = options.mapCountedLimit ?? defaults.mapCountedLimit
+  const listCountedLimit = options.listCountedLimit ?? defaults.listCountedLimit
   const chainMinChars = options.chainMinChars ?? defaults.chainMinChars
   const chainSplitter = options.chainSplitter ?? defaults.chainSplitter
   const prettyPrint = options.prettyPrint ?? defaults.prettyPrint
@@ -516,7 +524,10 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       encodeAny(val[i])
     }
     depth--
-    return pushHeader(LIST, offset - before, trim)
+    if (val.length <= listCountedLimit) {
+      return pushHeader(LIST, offset - before, trim)
+    }
+    return pushHeaderPair(LIST, offset - before, val.length, trim)
   }
 
   function encodeObject(val: object, trim = -1) {
@@ -527,15 +538,32 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
   }
 
   function encodeEntries(entries: [unknown, unknown][], trim = -1) {
-    depth++
     const before = offset
+    if (entries.length <= mapCountedLimit) {
+      depth++
+      for (let i = entries.length - 1; i >= 0; i--) {
+        const [key, value] = entries[i]
+        encodeAny(value, 1)
+        encodeAny(key)
+      }
+      depth--
+      return pushHeader(MAP, offset - before, trim)
+    }
+    depth++
     for (let i = entries.length - 1; i >= 0; i--) {
-      const [key, value] = entries[i]
-      encodeAny(value, 1)
+      const [_, value] = entries[i]
+      encodeAny(value)
+    }
+    if (prettyPrint) {
+      pushRaw(new Uint8Array([10]))
+    }
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [key] = entries[i]
       encodeAny(key)
     }
+
     depth--
-    return pushHeader(MAP, offset - before, trim)
+    return pushHeaderPair(MAP, offset - before, entries.length, trim)
   }
 
   function encodeAny(val: unknown, trim = -1): void {
@@ -640,6 +668,36 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
         const str = `${decodeZigZag(BigInt(val)).toString(10)}e${decodeZigZag(BigInt(val2)).toString(10)}`
         return [parseFloat(str), offset]
       }
+      if (tag2 === MAP.charCodeAt(0)) {
+        let allStrings = true
+        const entries: [unknown, unknown][] = []
+        for (let i = 0; i < val2; i++) {
+          const [key, newOffset] = decodeAny(offset)
+          if (typeof key !== 'string') {
+            allStrings = false
+          }
+          entries[i] = [key, undefined]
+          offset = newOffset
+        }
+        for (let i = 0; i < val2; i++) {
+          const [value, newOffset] = decodeAny(offset)
+          entries[i][1] = value
+          offset = newOffset
+        }
+        return [allStrings ? Object.fromEntries(entries) : new Map(entries), offset]
+      }
+      if (tag2 === LIST.charCodeAt(0)) {
+        // TODO: lazy parsed list
+        // this is duplicated from below because the counting means nothing to this eager parser
+        const end = offset + Number(val)
+        const list: unknown[] = []
+        while (offset < end) {
+          const [item, newOffset] = decodeAny(offset)
+          list.push(item)
+          offset = newOffset
+        }
+        return [list, offset]
+      }
       throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`)
     }
     if (tag === STRING.charCodeAt(0)) {
@@ -666,14 +724,18 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
     if (tag === MAP.charCodeAt(0)) {
       // TODO: lazy parsed map
       const end = offset + Number(val)
-      const map: Record<string, unknown> = {}
+      const entries: [unknown, unknown][] = []
+      let allStrings = true
       while (offset < end) {
         const [key, newOffset] = decodeAny(offset)
         const [value, newerOffset] = decodeAny(newOffset)
-        map[key as string] = value
+        if (typeof key !== 'string') {
+          allStrings = false
+        }
+        entries.push([key, value])
         offset = newerOffset
       }
-      return [map, offset]
+      return [allStrings ? Object.fromEntries(entries) : new Map(entries), offset]
     }
     if (tag === CHAIN.charCodeAt(0)) {
       const parts: string[] = []
