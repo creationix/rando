@@ -447,18 +447,46 @@ test('encode pretty-print', () => {
 })
 
 test('encode binary', () => {
+  expect(encodeBinary(null)).toEqual(new Uint8Array([0]))
+  expect(encodeBinary(false)).toEqual(new Uint8Array([1]))
+  expect(encodeBinary(true)).toEqual(new Uint8Array([2]))
+  expect(encodeBinary(0)).toEqual(new Uint8Array([5]))
+  expect(encodeBinary(-1)).toEqual(new Uint8Array([21]))
   expect(encodeBinary(1)).toEqual(new Uint8Array([37]))
+  expect(encodeBinary(-2)).toEqual(new Uint8Array([53]))
+  expect(encodeBinary(2)).toEqual(new Uint8Array([69]))
+  expect(encodeBinary(-3)).toEqual(new Uint8Array([85]))
+  expect(encodeBinary(3)).toEqual(new Uint8Array([101]))
+  expect(encodeBinary(-4)).toEqual(new Uint8Array([117]))
+  expect(encodeBinary(4)).toEqual(new Uint8Array([133, 1]))
+  expect(encodeBinary(5)).toEqual(new Uint8Array([165, 1]))
   expect(encodeBinary(12)).toEqual(new Uint8Array([133, 3]))
   expect(encodeBinary(123)).toEqual(new Uint8Array([229, 30]))
   expect(encodeBinary(1234)).toEqual(new Uint8Array([197, 180, 2]))
+  expect(encodeBinary('')).toEqual(new Uint8Array([9]))
+  expect(encodeBinary('H')).toEqual(new Uint8Array([25, 72]))
+  expect(encodeBinary('Hi')).toEqual(new Uint8Array([41, 72, 105]))
+  expect(encodeBinary('Hello')).toEqual(new Uint8Array([89, 72, 101, 108, 108, 111]))
+  expect(encodeBinary('Greetings')).toEqual(new Uint8Array([153, 1, 71, 114, 101, 101, 116, 105, 110, 103, 115]))
+  expect(encodeBinary([], { listCountedLimit: Infinity })).toEqual(new Uint8Array([12]))
+  expect(encodeBinary([], { listCountedLimit: -Infinity })).toEqual(new Uint8Array([15, 12]))
+  expect(encodeBinary([1, 2, 3], { listCountedLimit: Infinity })).toEqual(new Uint8Array([60, 37, 69, 101]))
+  expect(encodeBinary([1, 2, 3], { listCountedLimit: -Infinity })).toEqual(new Uint8Array([63, 60, 37, 69, 101]))
+  expect(encodeBinary({ a: 1, b: 2, c: 3 }, { mapCountedLimit: Infinity })).toEqual(
+    new Uint8Array([157, 1, 25, 97, 37, 25, 98, 69, 25, 99, 101]),
+  )
+  expect(encodeBinary({ a: 1, b: 2, c: 3 }, { mapCountedLimit: -Infinity })).toEqual(
+    new Uint8Array([159, 1, 61, 25, 97, 25, 98, 25, 99, 37, 69, 101]),
+  )
   expect(encodeBinary(fruit)).toEqual(
     new Uint8Array([
-      156, 10, 136, 3, 45, 148, 5, 212, 5, 57, 114, 101, 100, 236, 1, 212, 6, 169, 1, 115, 116, 114, 97, 119, 98, 101,
-      114, 114, 121, 216, 1, 45, 228, 1, 164, 2, 89, 103, 114, 101, 101, 110, 44, 148, 3, 184, 4, 45, 89, 99, 111, 108,
+      156, 10, 143, 3, 45, 148, 5, 212, 5, 57, 114, 101, 100, 236, 1, 212, 6, 169, 1, 115, 116, 114, 97, 119, 98, 101,
+      114, 114, 121, 223, 1, 45, 228, 1, 164, 2, 89, 103, 114, 101, 101, 110, 44, 148, 3, 191, 4, 45, 89, 99, 111, 108,
       111, 114, 105, 102, 114, 117, 105, 116, 115, 105, 121, 101, 108, 108, 111, 119, 220, 1, 89, 97, 112, 112, 108,
       101, 105, 98, 97, 110, 97, 110, 97,
     ]),
   )
+  expect(encodeBinary(new Uint8Array([1, 2, 3, 4]))).toEqual(new Uint8Array([74, 1, 2, 3, 4]))
 })
 
 test('decode B64', () => {
@@ -858,7 +886,7 @@ test('encode README values', () => {
 
 test('encode README tables', () => {
   const samples: [string, string?, EncodeOptions?][] = [
-    ['0', 'Zigzag Integers (val)'],
+    ['0', 'Integers ( zigzag(val) )'],
     ['1'],
     ['10'],
     ['100'],
@@ -917,45 +945,4 @@ test('encode README tables', () => {
       },
     }),
   )
-
-  const obj1 = {
-    method: 'GET',
-    scheme: 'https',
-    host: 'example.com',
-    port: 443,
-    path: '/',
-    headers: [
-      ['accept', 'application/json'],
-      ['user-agent', 'Mozilla/5.0'],
-    ],
-  }
-  const known1 = [
-    'method',
-    'GET',
-    'POST',
-    'PUT',
-    'DELETE',
-    'scheme',
-    'http',
-    'https',
-    'host',
-    'port',
-    'path',
-    '/',
-    80,
-    443,
-    'headers',
-    'accept',
-    'user-agent',
-    ['accept', 'application/json'],
-  ]
-  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
-  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
-  console.log(stringify(obj1, { knownValues: known1 }))
-  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
-  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
-  console.log(stringify(fruit))
-  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
-  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
-  console.log(stringify(fruit, { prettyPrint: true }))
 })

@@ -22,20 +22,27 @@ const BYTES = '='; // Contains RAW bytes as BASE64URL encoded string
 const CHAIN = ','; // String, bytes, or regexp broken into pieces
 // Recursive Container Types
 const LIST = ';'; // Multiple values in sequence
+// If SEP is present, val2 is count of items
 const MAP = ':'; // Multiple key-value pairs
-// Indexed containers:
-//   O(n) LIST become O(1) ARRAY
-//   O(n) MAP becomes O(log n) TRIE
-// For example an indexed LIST (aka an ARRAY) would be encoded as:
-//   B64(size) "#" B64(count) "|" B64(width) ";" index ...values
-// The `size` would include everything after the `#`, thus
-// this is not an exception to the grammar, but a normal frame.
-const INDEXED = '#';
-const LIST_BRACES = '[]';
-const MAP_BRACES = '{}';
-const CHAIN_BRACES = '()';
-const BYTES_BRACES = '<>';
-const binaryTypes = {
+// if SEP is present, it's keys first format and val2 is count of keys
+export const tags = {
+    NULL,
+    FALSE,
+    TRUE,
+    REF,
+    PTR,
+    INTEGER,
+    RATIONAL,
+    DECIMAL,
+    SEP,
+    B64_STRING,
+    STRING,
+    BYTES,
+    CHAIN,
+    LIST,
+    MAP,
+};
+export const binaryTypes = {
     [NULL]: 0,
     [FALSE]: 1,
     [TRUE]: 2,
@@ -44,13 +51,12 @@ const binaryTypes = {
     [INTEGER]: 5,
     [RATIONAL]: 6,
     [DECIMAL]: 7,
-    [SEP]: 8,
     [STRING]: 9,
     [BYTES]: 10,
     [CHAIN]: 11,
     [LIST]: 12,
     [MAP]: 13,
-    [INDEXED]: 14,
+    [SEP]: 15,
 };
 // URL Safe Base64 ordered similar to decimal and hecadecimal
 // Used for digits of variable length integers.
@@ -68,10 +74,7 @@ export function decodeB64(buf, offset = 0, end = buf.length) {
         offset++;
         num = num * 64n + BigInt(index);
     }
-    if (Number.isSafeInteger(Number(num))) {
-        return [Number(num), offset];
-    }
-    return [num, offset];
+    return [toNumberMaybe(num), offset];
 }
 // When encoding variable integers using the B64 chars, they are encoded in little endian
 // This means that the first character is the least significant digit.
@@ -121,10 +124,10 @@ function parseBase64(value) {
 function encodeZigZag(num) {
     return num >= 0n ? num * 2n : -1n - num * 2n;
 }
-function decodeZigZag(num) {
+export function decodeZigZag(num) {
     return num & 1n ? -(num >> 1n) - 1n : num >> 1n;
 }
-function toNumberMaybe(num) {
+export function toNumberMaybe(num) {
     if (Number.isSafeInteger(Number(num))) {
         return Number(num);
     }
@@ -157,6 +160,9 @@ export function splitDecimal(val) {
     return [base, exp];
 }
 const defaults = {
+    blockSize: 64 ** 3,
+    mapCountedLimit: 1,
+    listCountedLimit: 10,
     // Chain defaults were found by brute forcing all combinations on several datasets
     // But they can be adjusted for specific data for fine tuning.
     chainMinChars: 7,
@@ -164,7 +170,6 @@ const defaults = {
     prettyPrint: false,
     knownValues: [],
     binaryHeaders: false,
-    streamContainers: false,
 };
 export function findStringSegments(rootVal, options = {}) {
     const chainMinChars = options.chainMinChars ?? defaults.chainMinChars;
@@ -231,11 +236,11 @@ export function continuedFractionApproximation(num, maxIterations = 50, toleranc
     numerator *= sign;
     return [numerator, denominator];
 }
-function encodeLeb128(num) {
+export function encodeLeb128(num) {
     const bytes = [];
     while (num >= 0x80n) {
-        bytes.push(Number(num & 0x7fn) | 0x80);
-        num /= 128n;
+        bytes.push(Number(num % 0x80n) | 0x80);
+        num /= 0x80n;
     }
     bytes.push(Number(num));
     return bytes;
@@ -286,13 +291,19 @@ export function stringify(rootVal, options = {}) {
 }
 // Strings that are also b64 numbers within Number.MAX_SAFE_INTEGER
 const base64Str = /^[a-zA-Z1-9-_][a-zA-Z0-9-_]{0,7}$/;
+function getBlock(blockSize, offset) {
+    const block = Math.floor(offset / blockSize);
+    return block;
+}
 export function encode(rootVal, options = {}) {
+    const blockSize = options.blockSize ?? defaults.blockSize;
+    const mapCountedLimit = options.mapCountedLimit ?? defaults.mapCountedLimit;
+    const listCountedLimit = options.listCountedLimit ?? defaults.listCountedLimit;
     const chainMinChars = options.chainMinChars ?? defaults.chainMinChars;
     const chainSplitter = options.chainSplitter ?? defaults.chainSplitter;
     const prettyPrint = options.prettyPrint ?? defaults.prettyPrint;
     const knownValues = options.knownValues ?? defaults.knownValues;
     const binaryHeaders = options.binaryHeaders ?? defaults.binaryHeaders;
-    const streamContainers = options.streamContainers ?? defaults.streamContainers;
     let expectedSegments = findStringSegments(rootVal, options);
     const parts = [];
     let offset = 0;
@@ -350,7 +361,11 @@ export function encode(rootVal, options = {}) {
         offset += output.length;
     }
     function pushHeaderBinary(type, value) {
-        const num = BigInt(value) * 16n + BigInt(binaryTypes[type]);
+        const typeCode = binaryTypes[type];
+        if (typeof typeCode !== 'number') {
+            throw new Error(`Invalid type '${type}'`);
+        }
+        const num = BigInt(value) * 16n + BigInt(typeCode);
         return pushRaw(new Uint8Array(encodeLeb128(num)));
     }
     function pushHeader(type, value, trim = -1) {
@@ -438,9 +453,6 @@ export function encode(rootVal, options = {}) {
                 }
             }
             if (segments.length > 1) {
-                if (streamContainers) {
-                    pushChars(CHAIN_BRACES[1], 0);
-                }
                 depth++;
                 const before = offset;
                 for (let i = segments.length - 1; i >= 0; i--) {
@@ -448,9 +460,6 @@ export function encode(rootVal, options = {}) {
                     encodeAny(segment, 0);
                 }
                 depth--;
-                if (streamContainers) {
-                    return pushChars(CHAIN_BRACES[0], trim);
-                }
                 return pushHeader(CHAIN, offset - before, trim);
             }
         }
@@ -458,30 +467,26 @@ export function encode(rootVal, options = {}) {
         return pushHeader(STRING, body.byteLength, trim);
     }
     function encodeBinary(val, trim = -1) {
-        if (streamContainers) {
-            pushChars(BYTES_BRACES[1], 0);
-        }
         const start = offset;
-        pushBase64(val);
-        if (streamContainers) {
-            return pushChars(BYTES_BRACES[0], trim);
+        if (binaryHeaders) {
+            pushRaw(val);
+        }
+        else {
+            pushBase64(val);
         }
         return pushHeader(BYTES, offset - start, trim);
     }
     function encodeList(val, trim = -1) {
-        if (streamContainers) {
-            pushChars(LIST_BRACES[1], 1);
-        }
         depth++;
         const before = offset;
         for (let i = val.length - 1; i >= 0; i--) {
             encodeAny(val[i]);
         }
         depth--;
-        if (streamContainers) {
-            return pushChars(LIST_BRACES[0], trim);
+        if (val.length <= listCountedLimit) {
+            return pushHeader(LIST, offset - before, trim);
         }
-        return pushHeader(LIST, offset - before, trim);
+        return pushHeaderPair(LIST, offset - before, val.length, trim);
     }
     function encodeObject(val, trim = -1) {
         if (val instanceof Map) {
@@ -490,21 +495,31 @@ export function encode(rootVal, options = {}) {
         return encodeEntries(Object.entries(val), trim);
     }
     function encodeEntries(entries, trim = -1) {
-        if (streamContainers) {
-            pushChars(MAP_BRACES[1], 1);
+        const before = offset;
+        if (entries.length <= mapCountedLimit) {
+            depth++;
+            for (let i = entries.length - 1; i >= 0; i--) {
+                const [key, value] = entries[i];
+                encodeAny(value, 1);
+                encodeAny(key);
+            }
+            depth--;
+            return pushHeader(MAP, offset - before, trim);
         }
         depth++;
-        const before = offset;
         for (let i = entries.length - 1; i >= 0; i--) {
-            const [key, value] = entries[i];
-            encodeAny(value, 1);
+            const [_, value] = entries[i];
+            encodeAny(value);
+        }
+        if (prettyPrint) {
+            pushRaw(new Uint8Array([10]));
+        }
+        for (let i = entries.length - 1; i >= 0; i--) {
+            const [key] = entries[i];
             encodeAny(key);
         }
         depth--;
-        if (streamContainers) {
-            return pushChars(MAP_BRACES[0], trim);
-        }
-        return pushHeader(MAP, offset - before, trim);
+        return pushHeaderPair(MAP, offset - before, entries.length, trim);
     }
     function encodeAny(val, trim = -1) {
         if (known.has(val)) {
@@ -521,9 +536,10 @@ export function encode(rootVal, options = {}) {
             const s = seen.get(val);
             const dist = offset - s.offset;
             const cost = binaryHeaders
-                ? Math.ceil(Math.log2(dist) / Math.log2(128))
-                : Math.ceil(Math.log2(dist) / Math.log2(64)) + 1;
-            if (cost < s.written) {
+                ? Math.max(0, Math.ceil(Math.log2(dist * 16) / Math.log2(128)))
+                : Math.max(0, Math.ceil(Math.log2(dist) / Math.log2(64))) + 1;
+            // Only use pointers when it actually saves space and points within the same block
+            if (cost < s.written && getBlock(blockSize, offset + cost) === getBlock(blockSize, s.offset)) {
                 return pushHeader(PTR, dist, trim);
             }
         }
@@ -603,6 +619,36 @@ export function decode(rando, options = {}) {
                 const str = `${decodeZigZag(BigInt(val)).toString(10)}e${decodeZigZag(BigInt(val2)).toString(10)}`;
                 return [parseFloat(str), offset];
             }
+            if (tag2 === MAP.charCodeAt(0)) {
+                let allStrings = true;
+                const entries = [];
+                for (let i = 0; i < val2; i++) {
+                    const [key, newOffset] = decodeAny(offset);
+                    if (typeof key !== 'string') {
+                        allStrings = false;
+                    }
+                    entries[i] = [key, undefined];
+                    offset = newOffset;
+                }
+                for (let i = 0; i < val2; i++) {
+                    const [value, newOffset] = decodeAny(offset);
+                    entries[i][1] = value;
+                    offset = newOffset;
+                }
+                return [allStrings ? Object.fromEntries(entries) : new Map(entries), offset];
+            }
+            if (tag2 === LIST.charCodeAt(0)) {
+                // TODO: lazy parsed list
+                // this is duplicated from below because the counting means nothing to this eager parser
+                const end = offset + Number(val);
+                const list = [];
+                while (offset < end) {
+                    const [item, newOffset] = decodeAny(offset);
+                    list.push(item);
+                    offset = newOffset;
+                }
+                return [list, offset];
+            }
             throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`);
         }
         if (tag === STRING.charCodeAt(0)) {
@@ -615,14 +661,6 @@ export function decode(rando, options = {}) {
             const bytes = parseBase64(rando.slice(offset, end));
             return [bytes, end];
         }
-        if (tag === BYTES_BRACES.charCodeAt(0)) {
-            const start = offset;
-            while (rando[offset] !== BYTES_BRACES.charCodeAt(1)) {
-                offset++;
-            }
-            const bytes = parseBase64(rando.slice(start, offset));
-            return [bytes, offset + 1];
-        }
         if (tag === LIST.charCodeAt(0)) {
             // TODO: lazy parsed list
             const end = offset + Number(val);
@@ -634,36 +672,21 @@ export function decode(rando, options = {}) {
             }
             return [list, offset];
         }
-        if (tag === LIST_BRACES.charCodeAt(0)) {
-            const list = [];
-            while (rando[offset] !== LIST_BRACES.charCodeAt(1)) {
-                const [item, newOffset] = decodeAny(offset);
-                list.push(item);
-                offset = newOffset;
-            }
-            return [list, offset + 1];
-        }
         if (tag === MAP.charCodeAt(0)) {
             // TODO: lazy parsed map
             const end = offset + Number(val);
-            const map = {};
+            const entries = [];
+            let allStrings = true;
             while (offset < end) {
                 const [key, newOffset] = decodeAny(offset);
                 const [value, newerOffset] = decodeAny(newOffset);
-                map[key] = value;
+                if (typeof key !== 'string') {
+                    allStrings = false;
+                }
+                entries.push([key, value]);
                 offset = newerOffset;
             }
-            return [map, offset];
-        }
-        if (tag === MAP_BRACES.charCodeAt(0)) {
-            const map = {};
-            while (rando[offset] !== MAP_BRACES.charCodeAt(1)) {
-                const [key, newOffset] = decodeAny(offset);
-                const [value, newerOffset] = decodeAny(newOffset);
-                map[key] = value;
-                offset = newerOffset;
-            }
-            return [map, offset + 1];
+            return [allStrings ? Object.fromEntries(entries) : new Map(entries), offset];
         }
         if (tag === CHAIN.charCodeAt(0)) {
             const parts = [];
@@ -674,15 +697,6 @@ export function decode(rando, options = {}) {
                 offset = newOffset;
             }
             return [parts.join(''), offset];
-        }
-        if (tag === CHAIN_BRACES.charCodeAt(0)) {
-            const parts = [];
-            while (rando[offset] !== CHAIN_BRACES.charCodeAt(1)) {
-                const [part, newOffset] = decodeAny(offset);
-                parts.push(String(part));
-                offset = newOffset;
-            }
-            return [parts.join(''), offset + 1];
         }
         if (tag === PTR.charCodeAt(0)) {
             return [decodeAny(offset + Number(val))[0], offset];
