@@ -917,45 +917,4 @@ test('encode README tables', () => {
       },
     }),
   )
-
-  const obj1 = {
-    method: 'GET',
-    scheme: 'https',
-    host: 'example.com',
-    port: 443,
-    path: '/',
-    headers: [
-      ['accept', 'application/json'],
-      ['user-agent', 'Mozilla/5.0'],
-    ],
-  }
-  const known1 = [
-    'method',
-    'GET',
-    'POST',
-    'PUT',
-    'DELETE',
-    'scheme',
-    'http',
-    'https',
-    'host',
-    'port',
-    'path',
-    '/',
-    80,
-    443,
-    'headers',
-    'accept',
-    'user-agent',
-    ['accept', 'application/json'],
-  ]
-  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
-  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
-  console.log(stringify(obj1, { knownValues: known1 }))
-  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
-  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
-  console.log(stringify(fruit))
-  // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
-  // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README
-  console.log(stringify(fruit, { prettyPrint: true }))
 })

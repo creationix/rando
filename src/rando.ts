@@ -28,15 +28,6 @@ const LIST = ';' // Multiple values in sequence
 const MAP = ':' // Multiple key-value pairs
 // if SEP is present, it's keys first format and val2 is count of keys
 
-// Indexed containers:
-//   O(n) LIST become O(1) ARRAY
-//   O(n) MAP becomes O(log n) TRIE
-// For example an indexed LIST (aka an ARRAY) would be encoded as:
-//   B64(size) "#" B64(count) "|" B64(width) ";" index ...values
-// The `size` would include everything after the `#`, thus
-// this is not an exception to the grammar, but a normal frame.
-const INDEXED = '#'
-
 export const tags = {
   NULL,
   FALSE,
@@ -53,7 +44,6 @@ export const tags = {
   CHAIN,
   LIST,
   MAP,
-  INDEXED,
 }
 
 const binaryTypes = {
@@ -65,13 +55,13 @@ const binaryTypes = {
   [INTEGER]: 5,
   [RATIONAL]: 6,
   [DECIMAL]: 7,
-  [SEP]: 8,
+  [B64_STRING]: 8,
   [STRING]: 9,
   [BYTES]: 10,
   [CHAIN]: 11,
   [LIST]: 12,
   [MAP]: 13,
-  [INDEXED]: 14,
+  [SEP]: 15,
 }
 
 // URL Safe Base64 ordered similar to decimal and hecadecimal
@@ -182,6 +172,7 @@ export function splitDecimal(val: number) {
 }
 
 export interface EncodeOptions {
+  blockSize?: number
   mapCountedLimit?: number // The max count of map keys allowed before a length is encoded and keys are put first
   listCountedLimit?: number // The max count of list items allowed before a length is encoded
   chainMinChars?: number
@@ -196,10 +187,11 @@ export interface DecodeOptions {
 }
 
 const defaults: Required<EncodeOptions> = {
-  // Chain defaults were found by brute forcing all combinations on several datasets
-  // But they can be adjusted for specific data for fine tuning.
+  blockSize: 64 ** 3,
   mapCountedLimit: 1,
   listCountedLimit: 10,
+  // Chain defaults were found by brute forcing all combinations on several datasets
+  // But they can be adjusted for specific data for fine tuning.
   chainMinChars: 7,
   chainSplitter: /([^a-zA-Z0-9-_]*[a-zA-Z0-9-_]+)/,
   prettyPrint: false,
@@ -332,7 +324,13 @@ export function stringify(rootVal: unknown, options: EncodeOptions = {}) {
 // Strings that are also b64 numbers within Number.MAX_SAFE_INTEGER
 const base64Str = /^[a-zA-Z1-9-_][a-zA-Z0-9-_]{0,7}$/
 
+function getBlock(blockSize: number, offset: number): number {
+  const block = Math.floor(offset / blockSize)
+  return block
+}
+
 export function encode(rootVal: unknown, options: EncodeOptions = {}) {
+  const blockSize = options.blockSize ?? defaults.blockSize
   const mapCountedLimit = options.mapCountedLimit ?? defaults.mapCountedLimit
   const listCountedLimit = options.listCountedLimit ?? defaults.listCountedLimit
   const chainMinChars = options.chainMinChars ?? defaults.chainMinChars
@@ -582,9 +580,10 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       const s = seen.get(val)
       const dist = offset - s.offset
       const cost = binaryHeaders
-        ? Math.ceil(Math.log2(dist) / Math.log2(128))
-        : Math.ceil(Math.log2(dist) / Math.log2(64)) + 1
-      if (cost < s.written) {
+        ? Math.max(0, Math.ceil(Math.log2(dist) / Math.log2(128)))
+        : Math.max(0, Math.ceil(Math.log2(dist) / Math.log2(64))) + 1
+      // Only use pointers when it actually saves space and points within the same block
+      if (cost < s.written && getBlock(blockSize, offset + cost) === getBlock(blockSize, s.offset)) {
         return pushHeader(PTR, dist, trim)
       }
     }
