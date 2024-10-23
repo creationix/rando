@@ -886,42 +886,65 @@ test('encode README values', () => {
 
 test('encode README tables', () => {
   const samples: [string, string?, EncodeOptions?][] = [
-    ['0', 'Integers ( zigzag(val) )'],
-    ['1'],
-    ['10'],
-    ['100'],
-    ['1000'],
+    ['0', 'Integers'],
     ['-1'],
-    ['-10'],
-    ['-100'],
-    ['-1000'],
-    ['0.03333333333333333', 'Rational ( zigzag(num) dem )'],
-    ['3.14159', 'Decimal ( zigzag(base) zigzag(exponent) )'],
+    ['1'],
+    ['-25'],
+    ['2000'],
+    ['-125000'],
+    ['8654321'],
+    ['1/3', 'Rational'],
+    ['-13/7'],
+    ['1/0', 'Infinity'],
+    ['-1/0', '-Infinity'],
+    ['0/0', 'NaN'],
+    ['3.14159', 'Decimal'],
     ['true', 'True'],
     ['false', 'False'],
     ['null', 'Null'],
-    ['""', 'Empty String'],
-    ['"Banana"', 'B64 String'],
-    ['"Hi, World"', 'String'],
-    ['"🍌"', 'UTF-8 String'],
-    ['[1,2,3]', 'Lists', { listCountedLimit: Infinity }],
-    ['[100,100,100]', 'Lists with Pointers (repeats)'],
-    ['[1,2,3]', 'Counted Lists', { listCountedLimit: 1 }],
-    ['{"a":1,"b":2,"c":3}', 'Maps', { mapCountedLimit: Infinity }],
-    ['{"a":1,"b":2,"c":3}', 'Counted Maps', { mapCountedLimit: 1 }],
-    ['[{"name":"Alice"},{"name":"Bob"}]', 'Maps and Lists with Pointers'],
+    ["''", 'Empty String'],
+    ["'Banana'", 'B64 String'],
+    ["'Hi, World'", 'String'],
+    ["'🍌'", 'UTF-8 String'],
+    ['[ 1, 2, 3] ', 'Lists', { listCountedLimit: Infinity }],
+    ['[ 100, 100, 100 ]', 'Lists with Pointers'],
+    ['[ 1, 2, 3 ]', 'Counted Lists', { listCountedLimit: 1 }],
+    ['{ a: 1, b: 2, c: 3 }', 'Maps', { mapCountedLimit: Infinity }],
+    ['{ a: 1, b: 2, c: 3 }', 'Counted Maps', { mapCountedLimit: 1 }],
+    ["[ { name: 'Alice' }, { name: 'Bob' } ]", 'Repeated Keys'],
+    ['new Map([[1,2],[3,4]])', 'Non-string Keys'],
+    ['new Uint8Array([1,2,3,4,5,6])', 'Bytes'],
   ]
   const table: string[] = []
   const opts: EncodeOptions = {}
-  for (const [json, desc, newOpts] of samples) {
+  for (const [js, desc, newOpts] of samples) {
     if (newOpts) {
       Object.assign(opts, newOpts)
     }
-    const val = JSON.parse(json)
+    let json: string
+    let val: unknown
+    try {
+      val = JSON.parse(js)
+      json = js
+    } catch (_) {
+      // biome-ignore lint/security/noGlobalEval: <explanation>
+      val = eval(`(${js})`)
+      if (
+        (typeof val === 'number' && !Number.isFinite(val)) ||
+        (val && typeof val === 'object' && (val instanceof Map || ArrayBuffer.isView(val)))
+      ) {
+        json = ''
+      } else {
+        json = JSON.stringify(val)
+      }
+    }
     const encoded = stringify(val, opts)
-    const input = `\`${json}\``
+    const input = `\`${js}\``
+    const inter = json ? `\`${json}\`` : 'N/A'
     const output = `\`${encoded}\``
-    table.push(`| ${input.padStart(35)} | ${output.replace(/\|/g, '\\|').padEnd(28)} | ${(desc ?? '').padEnd(30)} |`)
+    table.push(
+      `| ${input.padStart(10)} |${inter.padStart(28)} | ${output.replace(/\|/g, '\\|').padEnd(28)} | ${(desc ?? '').padEnd(30)} |`,
+    )
   }
   // biome-ignore lint/suspicious/noConsoleLog: Printed on purpose
   // biome-ignore lint/suspicious/noConsole: so that we can copy-paste into the README

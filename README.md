@@ -19,32 +19,36 @@
 
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
-|                                JSON | Rando                        | Comment                                   |
-| ----------------------------------: | :--------------------------- | ----------------------------------------- |
-|                                 `0` | `+`                          | Integers ( zigzag(val) )                  |
-|                                 `1` | `2+`                         |                                           |
-|                                `10` | `k+`                         |                                           |
-|                               `100` | `38+`                        |                                           |
-|                              `1000` | `vg+`                        |                                           |
-|                                `-1` | `1+`                         |                                           |
-|                               `-10` | `j+`                         |                                           |
-|                              `-100` | `37+`                        |                                           |
-|                             `-1000` | `vf+`                        |                                           |
-|               `0.03333333333333333` | `2\|u/`                      | Rational ( zigzag(num) dem )              |
-|                           `3.14159` | `2ppu\|9.`                   | Decimal ( zigzag(base) zigzag(exponent) ) |
-|                              `true` | `!`                          | True                                      |
-|                             `false` | `~`                          | False                                     |
-|                              `null` | `?`                          | Null                                      |
-|                                `""` | `$`                          | Empty String                              |
-|                          `"Banana"` | `Banana'`                    | B64 String                                |
-|                       `"Hi, World"` | `9$Hi, World`                | String                                    |
-|                               `"🍌"` | `4$🍌`                        | UTF-8 String                              |
-|                           `[1,2,3]` | `6;2+4+6+`                   | Lists                                     |
-|                     `[100,100,100]` | `6;1**38+`                   | Lists with Pointers (repeats)             |
-|                           `[1,2,3]` | `6\|3;2+4+6+`                | Counted Lists                             |
-|               `{"a":1,"b":2,"c":3}` | `c:a'2+b'4+c'6+`             | Maps                                      |
-|               `{"a":1,"b":2,"c":3}` | `c\|3:a'b'c'2+4+6+`          | Counted Maps                              |
-| `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice'9:name'Bob'` | Maps and Lists with Pointers              |
+|                                       JS |                                JSON | Rando                        | Comment             |
+| ---------------------------------------: | ----------------------------------: | :--------------------------- | ------------------- |
+|                                      `0` |                                 `0` | `+`                          | Integers            |
+|                                     `-1` |                                `-1` | `1+`                         |                     |
+|                                      `1` |                                 `1` | `2+`                         |                     |
+|                                    `-25` |                               `-25` | `N+`                         |                     |
+|                                   `2000` |                              `2000` | `-w+`                        |                     |
+|                                `-125000` |                           `-125000` | `Z2f+`                       |                     |
+|                                `8654321` |                           `8654321` | `121Ly+`                     |                     |
+|                                    `1/3` |                `0.3333333333333333` | `2\|3/`                      | Rational            |
+|                                  `-13/7` |               `-1.8571428571428572` | `p\|7/`                      |                     |
+|                                    `1/0` |                                 N/A | `2\|/`                       | Infinity            |
+|                                   `-1/0` |                                 N/A | `1\|/`                       | -Infinity           |
+|                                    `0/0` |                                 N/A | `\|/`                        | NaN                 |
+|                                `3.14159` |                           `3.14159` | `2ppu\|9.`                   | Decimal             |
+|                                   `true` |                              `true` | `!`                          | True                |
+|                                  `false` |                             `false` | `~`                          | False               |
+|                                   `null` |                              `null` | `?`                          | Null                |
+|                                     `''` |                                `""` | `$`                          | Empty String        |
+|                               `'Banana'` |                          `"Banana"` | `Banana'`                    | B64 String          |
+|                            `'Hi, World'` |                       `"Hi, World"` | `9$Hi, World`                | String              |
+|                                    `'🍌'` |                               `"🍌"` | `4$🍌`                        | UTF-8 String        |
+|                            `[ 1, 2, 3] ` |                       `[ 1, 2, 3] ` | `6;2+4+6+`                   | Lists               |
+|                      `[ 100, 100, 100 ]` |                 `[ 100, 100, 100 ]` | `6;1**38+`                   | Lists with Pointers |
+|                            `[ 1, 2, 3 ]` |                       `[ 1, 2, 3 ]` | `6\|3;2+4+6+`                | Counted Lists       |
+|                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c:a'2+b'4+c'6+`             | Maps                |
+|                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c\|3:a'b'c'2+4+6+`          | Counted Maps        |
+| `[ { name: 'Alice' }, { name: 'Bob' } ]` | `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice'9:name'Bob'` | Repeated Keys       |
+|                 `new Map([[1,2],[3,4]])` |                                 N/A | `8\|2:2+6+4+8+`              | Non-string Keys     |
+|          `new Uint8Array([1,2,3,4,5,6])` |                                 N/A | `8=AQIDBAUG`                 | Bytes               |
 
 Use Rando anywhere you might use JSON if the following are true:
 
