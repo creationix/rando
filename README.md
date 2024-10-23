@@ -52,7 +52,7 @@ Rando is a new serialization format optimized for fast random access of unstruct
 |                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c\|3:a'b'c'2+4+6+`          | Counted Maps        |
 | `[ { name: 'Alice' }, { name: 'Bob' } ]` | `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice'9:name'Bob'` | Repeated Keys       |
 |                 `new Map([[1,2],[3,4]])` |                                 N/A | `8\|2:2+6+4+8+`              | Non-string Keys     |
-|          `new Uint8Array([1,2,3,4,5,6])` |                                 N/A | `8=AQIDBAUG`                 | Bytes               |
+|          `new Uint8Array([213,231,187])` |                                 N/A | `4=1ee7`                     | Bytes               |
 
 Use Rando anywhere you might use JSON if the following are true:
 

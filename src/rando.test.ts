@@ -917,7 +917,7 @@ test('encode README tables', () => {
     ['{ a: 1, b: 2, c: 3 }', 'Counted Maps', { mapCountedLimit: 1 }],
     ["[ { name: 'Alice' }, { name: 'Bob' } ]", 'Repeated Keys'],
     ['new Map([[1,2],[3,4]])', 'Non-string Keys'],
-    ['new Uint8Array([1,2,3,4,5,6])', 'Bytes'],
+    ['new Uint8Array([213,231,187])', 'Bytes'],
   ]
   const table: string[] = []
   const opts: EncodeOptions = {}
