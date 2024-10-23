@@ -190,8 +190,6 @@ A `pointer` points to a value `seen` later in the document. Since Rando encodes 
 
 To decode a pointer, add `offset` bytes after the `*` and decode again.
 
-By default, Rando will not use pointers to references values across block boundaries.
-
 A `reference` is a zero based index into an external array of `known` values provided by the caller of both the encoder and decoder.
 
 It's up to the user of the library to ensure that the same list is used for both sides.
