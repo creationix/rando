@@ -51,7 +51,6 @@ export const binaryTypes = {
     [INTEGER]: 5,
     [RATIONAL]: 6,
     [DECIMAL]: 7,
-    [B64_STRING]: 8,
     [STRING]: 9,
     [BYTES]: 10,
     [CHAIN]: 11,
@@ -237,11 +236,11 @@ export function continuedFractionApproximation(num, maxIterations = 50, toleranc
     numerator *= sign;
     return [numerator, denominator];
 }
-function encodeLeb128(num) {
+export function encodeLeb128(num) {
     const bytes = [];
     while (num >= 0x80n) {
-        bytes.push(Number(num & 0x7fn) | 0x80);
-        num /= 128n;
+        bytes.push(Number(num % 0x80n) | 0x80);
+        num /= 0x80n;
     }
     bytes.push(Number(num));
     return bytes;
