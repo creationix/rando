@@ -686,6 +686,18 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
         }
         return [allStrings ? Object.fromEntries(entries) : new Map(entries), offset]
       }
+      if (tag2 === LIST.charCodeAt(0)) {
+        // TODO: lazy parsed list
+        // this is duplicated from below because the counting means nothing to this eager parser
+        const end = offset + Number(val)
+        const list: unknown[] = []
+        while (offset < end) {
+          const [item, newOffset] = decodeAny(offset)
+          list.push(item)
+          offset = newOffset
+        }
+        return [list, offset]
+      }
       throw new Error(`Invalid type following separator: ${String.fromCharCode(tag2)}`)
     }
     if (tag === STRING.charCodeAt(0)) {
@@ -712,14 +724,18 @@ export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
     if (tag === MAP.charCodeAt(0)) {
       // TODO: lazy parsed map
       const end = offset + Number(val)
-      const map: Record<string, unknown> = {}
+      const entries: [unknown, unknown][] = []
+      let allStrings = true
       while (offset < end) {
         const [key, newOffset] = decodeAny(offset)
         const [value, newerOffset] = decodeAny(newOffset)
-        map[key as string] = value
+        if (typeof key !== 'string') {
+          allStrings = false
+        }
+        entries.push([key, value])
         offset = newerOffset
       }
-      return [map, offset]
+      return [allStrings ? Object.fromEntries(entries) : new Map(entries), offset]
     }
     if (tag === CHAIN.charCodeAt(0)) {
       const parts: string[] = []
