@@ -10,7 +10,7 @@ Rando is a new serialization format optimized for fast random access of unstruct
 
 |                                JSON | Rando                        | Comment                                   |
 | ----------------------------------: | :--------------------------- | ----------------------------------------- |
-|                                 `0` | `+`                          | Zigzag Integers (val)                     |
+|                                 `0` | `+`                          | Integers ( zigzag(val) )                  |
 |                                 `1` | `2+`                         |                                           |
 |                                `10` | `k+`                         |                                           |
 |                               `100` | `38+`                        |                                           |
@@ -34,7 +34,6 @@ Rando is a new serialization format optimized for fast random access of unstruct
 |               `{"a":1,"b":2,"c":3}` | `c:a'2+b'4+c'6+`             | Maps                                      |
 |               `{"a":1,"b":2,"c":3}` | `c\|3:a'b'c'2+4+6+`          | Counted Maps                              |
 | `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice'9:name'Bob'` | Maps and Lists with Pointers              |
-
 Use Rando anywhere you might use JSON if the following are true:
 
 - You don't want to always parse everything when reading documents
