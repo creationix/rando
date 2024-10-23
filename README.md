@@ -102,7 +102,20 @@ The decoded value in JavaScript is lazy parsed so it should be very fast even fo
 
 ## Supported Types
 
-The basic types in JSON are supported along with automatically base64 encoded binary data.
+Rando can encode anything that JSON can encode:
+
+- null
+- boolean
+- number
+- string
+- list
+- map
+
+It can also encode:
+
+- binary (base64 encoded when rando is in text mode)
+- rational numbers (including `Infinity`, `-Infinity` and `NaN`)
+- maps can contain any values, not just strings.
 
 ### Boolean and Null
 
