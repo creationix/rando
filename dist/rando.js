@@ -16,7 +16,7 @@ const DECIMAL = '.'; // Decimal (base 10 exponent) number as zigzag(base)|zigzag
 // multiple b64 values are required to skip a frame.
 const SEP = '|';
 // Byte Container Types
-const B64_STRING = "'"; // base64 digits are the string itself
+const B64_STRING = "@"; // base64 digits are the string itself
 const STRING = '$'; // Contains UTF-8 encoded string bytes
 const BYTES = '='; // Contains RAW bytes as BASE64URL encoded string
 const CHAIN = ','; // String, bytes, or regexp broken into pieces
@@ -159,7 +159,7 @@ export function splitDecimal(val) {
     }
     return [base, exp];
 }
-const defaults = {
+export const defaults = {
     blockSize: 64 ** 3,
     mapCountedLimit: 1,
     listCountedLimit: 10,
@@ -500,6 +500,8 @@ export function encode(rootVal, options = {}) {
             depth++;
             for (let i = entries.length - 1; i >= 0; i--) {
                 const [key, value] = entries[i];
+                if (value === undefined)
+                    continue;
                 encodeAny(value, 1);
                 encodeAny(key);
             }
@@ -507,19 +509,25 @@ export function encode(rootVal, options = {}) {
             return pushHeader(MAP, offset - before, trim);
         }
         depth++;
+        let count = 0;
         for (let i = entries.length - 1; i >= 0; i--) {
             const [_, value] = entries[i];
+            if (value === undefined)
+                continue;
             encodeAny(value);
         }
         if (prettyPrint) {
             pushRaw(new Uint8Array([10]));
         }
         for (let i = entries.length - 1; i >= 0; i--) {
-            const [key] = entries[i];
+            const [key, value] = entries[i];
+            if (value === undefined)
+                continue;
             encodeAny(key);
+            count++;
         }
         depth--;
-        return pushHeaderPair(MAP, offset - before, entries.length, trim);
+        return pushHeaderPair(MAP, offset - before, count, trim);
     }
     function encodeAny(val, trim = -1) {
         if (known.has(val)) {
@@ -583,7 +591,7 @@ export function parse(rando, options = {}) {
     return decode(buf, options);
 }
 export function decode(rando, options = {}) {
-    const knownValues = options.knownValues ?? [];
+    const knownValues = options.knownValues ?? defaults.knownValues ?? [];
     return decodeAny(0)[0];
     function decodeAny(offset) {
         // trim leading whitespace

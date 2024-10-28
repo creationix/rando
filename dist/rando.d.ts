@@ -49,6 +49,7 @@ export interface EncodeOptions {
 export interface DecodeOptions {
     knownValues?: unknown[];
 }
+export declare const defaults: Required<EncodeOptions>;
 export declare function findStringSegments(rootVal: unknown, options?: EncodeOptions): {
     [val: string]: number;
 };
