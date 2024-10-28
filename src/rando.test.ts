@@ -233,14 +233,14 @@ test('encode primitives', () => {
 })
 
 test('encode b64 strings', () => {
-  expect(stringify('short')).toEqual("short'")
-  expect(stringify('Dash-it')).toEqual("Dash-it'")
-  expect(stringify('CAP_CASE')).toEqual("CAP_CASE'")
-  expect(stringify('1234')).toEqual("1234'")
+  expect(stringify('short')).toEqual('short@')
+  expect(stringify('Dash-it')).toEqual('Dash-it@')
+  expect(stringify('CAP_CASE')).toEqual('CAP_CASE@')
+  expect(stringify('1234')).toEqual('1234@')
   // Leading zeros aren't supported
   expect(stringify('01234')).toEqual('5$01234')
-  // strings longer than 8 chars aren't supported
-  expect(stringify('12345678')).toEqual("12345678'")
+  // strings longer than 8 chars aren't encoded in this version
+  expect(stringify('12345678')).toEqual('12345678@')
   expect(stringify('123456789')).toEqual('9$123456789')
   expect(stringify('ThisIsLong')).toEqual('a$ThisIsLong')
 })
@@ -344,40 +344,40 @@ test('encode objects and maps', () => {
   // First encode non-counted objects
   const opts: EncodeOptions = { mapCountedLimit: Infinity }
   expect(stringify({}, opts)).toEqual(':')
-  expect(stringify({ a: 0 }, opts)).toEqual("3:a'+")
-  expect(stringify({ a: 0, b: true }, opts)).toEqual("6:a'+b'!")
-  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("9:a'+b'!c':")
+  expect(stringify({ a: 0 }, opts)).toEqual('3:a@+')
+  expect(stringify({ a: 0, b: true }, opts)).toEqual('6:a@+b@!')
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual('9:a@+b@!c@:')
   expect(stringify(new Map(), opts)).toEqual(':')
   expect(stringify(new Map([[1, 2]]), opts)).toEqual('4:2+4+')
-  expect(stringify(complexMap, opts)).toEqual("l:!+~2+?4+;6+:8+a+five'")
+  expect(stringify(complexMap, opts)).toEqual('l:!+~2+?4+;6+:8+a+five@')
   // Then encode as counted (keys should come grouped together first)
   opts.mapCountedLimit = -1
   expect(stringify({}, opts)).toEqual('|:')
-  expect(stringify({ a: 0 }, opts)).toEqual("3|1:a'+")
-  expect(stringify({ a: 0, b: true }, opts)).toEqual("6|2:a'b'+!")
-  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("a|3:a'b'c'+!|:")
+  expect(stringify({ a: 0 }, opts)).toEqual('3|1:a@+')
+  expect(stringify({ a: 0, b: true }, opts)).toEqual('6|2:a@b@+!')
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual('a|3:a@b@c@+!|:')
   expect(stringify(new Map(), opts)).toEqual('|:')
   expect(stringify(new Map([[1, 2]]), opts)).toEqual('4|1:2+4+')
-  expect(stringify(complexMap, opts)).toEqual("m|6:!~?;|:a++2+4+6+8+five'")
+  expect(stringify(complexMap, opts)).toEqual('m|6:!~?;|:a++2+4+6+8+five@')
   // Then encode with a sane limit
   opts.mapCountedLimit = 1
   expect(stringify({}, opts)).toEqual(':')
-  expect(stringify({ a: 0 }, opts)).toEqual("3:a'+")
-  expect(stringify({ a: 0, b: true }, opts)).toEqual("6|2:a'b'+!")
-  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("9|3:a'b'c'+!:")
+  expect(stringify({ a: 0 }, opts)).toEqual('3:a@+')
+  expect(stringify({ a: 0, b: true }, opts)).toEqual('6|2:a@b@+!')
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual('9|3:a@b@c@+!:')
   expect(stringify(new Map(), opts)).toEqual(':')
   expect(stringify(new Map([[1, 2]]), opts)).toEqual('4:2+4+')
-  expect(stringify(complexMap, opts)).toEqual("l|6:!~?;:a++2+4+6+8+five'")
+  expect(stringify(complexMap, opts)).toEqual('l|6:!~?;:a++2+4+6+8+five@')
   // Encode pretty-printed
   opts.prettyPrint = true
   expect(stringify({}, opts)).toEqual(':')
-  expect(stringify({ a: 0 }, opts)).toEqual("6:\n a' +")
-  expect(stringify({ a: 0, b: true }, opts)).toEqual("f|2:\n a'\n b'\n\n +\n !")
-  expect(stringify({ a: 0, b: true }, { ...opts, mapCountedLimit: Infinity })).toEqual("c:\n a' +\n b' !")
-  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual("m|3:\n a'\n b'\n c'\n\n +\n !\n :")
+  expect(stringify({ a: 0 }, opts)).toEqual('6:\n a@ +')
+  expect(stringify({ a: 0, b: true }, opts)).toEqual('f|2:\n a@\n b@\n\n +\n !')
+  expect(stringify({ a: 0, b: true }, { ...opts, mapCountedLimit: Infinity })).toEqual('c:\n a@ +\n b@ !')
+  expect(stringify({ a: 0, b: true, c: {} }, opts)).toEqual('m|3:\n a@\n b@\n c@\n\n +\n !\n :')
   expect(stringify(new Map(), opts)).toEqual(':')
   expect(stringify(new Map([[1, 2]]), opts)).toEqual('7:\n 2+ 4+')
-  expect(stringify(complexMap, opts)).toEqual("K|6:\n !\n ~\n ?\n ;\n :\n a+\n\n +\n 2+\n 4+\n 6+\n 8+\n five'")
+  expect(stringify(complexMap, opts)).toEqual('K|6:\n !\n ~\n ?\n ;\n :\n a+\n\n +\n 2+\n 4+\n 6+\n 8+\n five@')
 })
 
 test('encode string chains', () => {
@@ -405,7 +405,7 @@ const fruit = [
 
 test('encode known values', () => {
   expect(stringify(fruit)).toEqual(
-    "1l;o|2:I*M*red'e;U*a$strawberrye|2:g*k*green'2;q*z|2:color'fruits'yellow'd;apple'banana'",
+    '1l;o|2:I*M*red@e;U*a$strawberrye|2:g*k*green@2;q*z|2:color@fruits@yellow@d;apple@banana@',
   )
   const options: EncodeOptions = {
     knownValues: [
@@ -430,19 +430,19 @@ test('encode pretty-print', () => {
     prettyPrint: true,
   }
   expect(stringify({ int: 123, rational: 1 / 3, decimal: 1.23 }, options)).toEqual(
-    "K|3:\n int'\n rational'\n decimal'\n\n 3S+\n 2|3/\n 3S|3.",
+    'K|3:\n int@\n rational@\n decimal@\n\n 3S+\n 2|3/\n 3S|3.',
   )
   expect(stringify({ bool: true, bool2: false, nil: null }, options)).toEqual(
-    "v|3:\n bool'\n bool2'\n nil'\n\n !\n ~\n ?",
+    'v|3:\n bool@\n bool2@\n nil@\n\n !\n ~\n ?',
   )
   expect(stringify({ obj: {}, arr: [], chain: 'repeat/repeat/repeat' }, options)).toEqual(
-    "M|3:\n obj'\n arr'\n chain'\n\n :\n ;\n h,repeat'*7$/repeat",
+    'M|3:\n obj@\n arr@\n chain@\n\n :\n ;\n h,repeat@*7$/repeat',
   )
   expect(stringify({ string: 'Hello', bytes: new Uint8Array([1, 2, 3]) }, options)).toEqual(
-    "y|2:\n string'\n bytes'\n\n Hello'\n 4=AQID",
+    'y|2:\n string@\n bytes@\n\n Hello@\n 4=AQID',
   )
   expect(stringify(fruit, options)).toEqual(
-    "2p;\n M|2:\n  1l*\n  1o*\n\n  red'\n  n;\n   1u*\n   a$strawberry\n v|2:\n  w*\n  A*\n\n  green'\n  6;\n   F*\n U|2:\n  color'\n  fruits'\n\n  yellow'\n  l;\n   apple'\n   banana'",
+    '2p;\n M|2:\n  1l*\n  1o*\n\n  red@\n  n;\n   1u*\n   a$strawberry\n v|2:\n  w*\n  A*\n\n  green@\n  6;\n   F*\n U|2:\n  color@\n  fruits@\n\n  yellow@\n  l;\n   apple@\n   banana@',
   )
 })
 
@@ -615,18 +615,18 @@ test('decode primitives', () => {
 })
 
 test('decode b64 strings', () => {
-  expect(parse("short'")).toEqual('short')
-  expect(parse("Dash-it'")).toEqual('Dash-it')
-  expect(parse("CAP_CASE'")).toEqual('CAP_CASE')
-  expect(parse("1234'")).toEqual('1234')
-  expect(parse("12345'")).toEqual('12345')
-  expect(parse("123456'")).toEqual('123456')
-  expect(parse("1234567'")).toEqual('1234567')
-  expect(parse("12345678'")).toEqual('12345678')
+  expect(parse('short@')).toEqual('short')
+  expect(parse('Dash-it@')).toEqual('Dash-it')
+  expect(parse('CAP_CASE@')).toEqual('CAP_CASE')
+  expect(parse('1234@')).toEqual('1234')
+  expect(parse('12345@')).toEqual('12345')
+  expect(parse('123456@')).toEqual('123456')
+  expect(parse('1234567@')).toEqual('1234567')
+  expect(parse('12345678@')).toEqual('12345678')
   // Decoder accepts leading zeroes and large strings even though the encoder doesn't
-  expect(parse("01234'")).toEqual('01234')
-  expect(parse("123456789'")).toEqual('123456789')
-  expect(parse("ThisIsLong'")).toEqual('ThisIsLong')
+  expect(parse('01234@')).toEqual('01234')
+  expect(parse('123456789@')).toEqual('123456789')
+  expect(parse('ThisIsLong@')).toEqual('ThisIsLong')
 })
 
 test('decode strings', () => {
@@ -716,27 +716,27 @@ test('decode objects and maps', () => {
   ])
   // decode non-counted objects
   expect(parse(':')).toEqual({})
-  expect(parse("3:a'+")).toEqual({ a: 0 })
-  expect(parse("6:a'+b'!")).toEqual({ a: 0, b: true })
-  expect(parse("9:a'+b'!c':")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('3:a@+')).toEqual({ a: 0 })
+  expect(parse('6:a@+b@!')).toEqual({ a: 0, b: true })
+  expect(parse('9:a@+b@!c@:')).toEqual({ a: 0, b: true, c: {} })
   expect(parse('4:2+4+')).toEqual(new Map([[1, 2]]))
-  expect(parse("l:!+~2+?4+;6+:8+a+five'")).toEqual(complexMap)
+  expect(parse('l:!+~2+?4+;6+:8+a+five@')).toEqual(complexMap)
   // decode counted objects
   expect(parse('|:')).toEqual({})
-  expect(parse("3|1:a'+")).toEqual({ a: 0 })
-  expect(parse("6|2:a'b'+!")).toEqual({ a: 0, b: true })
-  expect(parse("a|3:a'b'c'+!|:")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('3|1:a@+')).toEqual({ a: 0 })
+  expect(parse('6|2:a@b@+!')).toEqual({ a: 0, b: true })
+  expect(parse('a|3:a@b@c@+!|:')).toEqual({ a: 0, b: true, c: {} })
   expect(parse('4|1:2+4+')).toEqual(new Map([[1, 2]]))
-  expect(parse("m|6:!~?;|:a++2+4+6+8+five'")).toEqual(complexMap)
+  expect(parse('m|6:!~?;|:a++2+4+6+8+five@')).toEqual(complexMap)
   // Decode with mixed limits
-  expect(parse("9|3:a'b'c'+!:")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('9|3:a@b@c@+!:')).toEqual({ a: 0, b: true, c: {} })
   // Decode pretty-printed
   expect(parse(':')).toEqual({})
-  expect(parse("6:\n a' +")).toEqual({ a: 0 })
-  expect(parse("f|2:\n a'\n b'\n\n +\n !")).toEqual({ a: 0, b: true })
-  expect(parse("m|3:\n a'\n b'\n c'\n\n +\n !\n :")).toEqual({ a: 0, b: true, c: {} })
+  expect(parse('6:\n a@ +')).toEqual({ a: 0 })
+  expect(parse('f|2:\n a@\n b@\n\n +\n !')).toEqual({ a: 0, b: true })
+  expect(parse('m|3:\n a@\n b@\n c@\n\n +\n !\n :')).toEqual({ a: 0, b: true, c: {} })
   expect(parse('7:\n 2+ 4+')).toEqual(new Map([[1, 2]]))
-  expect(parse("K|6:\n !\n ~\n ?\n ;\n :\n a+\n\n +\n 2+\n 4+\n 6+\n 8+\n five'")).toEqual(complexMap)
+  expect(parse('K|6:\n !\n ~\n ?\n ;\n :\n a+\n\n +\n 2+\n 4+\n 6+\n 8+\n five@')).toEqual(complexMap)
 })
 
 test('decode pointers', () => {
@@ -785,13 +785,13 @@ test('decode values with whitespace', () => {
 })
 
 test('encode README values', () => {
-  expect(stringify('Banana')).toEqual("Banana'")
+  expect(stringify('Banana')).toEqual('Banana@')
   expect(stringify('Hi, World')).toEqual('9$Hi, World')
   expect(stringify('🍌')).toEqual('4$🍌')
   expect(stringify([1, 2, 3])).toEqual('6;2+4+6+')
   expect(stringify([100, 100, 100])).toEqual('6;1**38+')
-  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual("c|3:a'b'c'2+4+6+")
-  expect(stringify([{ name: 'Alice' }, { name: 'Bob' }])).toEqual("l;8:8*Alice'9:name'Bob'")
+  expect(stringify({ a: 1, b: 2, c: 3 })).toEqual('c|3:a@b@c@2+4+6+')
+  expect(stringify([{ name: 'Alice' }, { name: 'Bob' }])).toEqual('l;8:8*Alice@9:name@Bob@')
 
   const sampleDoc = {
     person: {
@@ -811,7 +811,7 @@ test('encode README values', () => {
 
   const encoded1 = stringify(sampleDoc)
   expect(encoded1).toEqual(
-    "1B|3:person'list'11*H|4:name'age'id'c$ai-generated8$John DoeY+61O+!a;2+4+6+8+a+n|2:b*nested'6*a:key'value'",
+    '1B|3:person@list@11*H|4:name@age@id@c$ai-generated8$John DoeY+61O+!a;2+4+6+8+a+n|2:b*nested@6*a:key@value@',
   )
 
   const decoded1 = parse(encoded1)

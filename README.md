@@ -42,15 +42,15 @@ Rando is a new serialization format optimized for fast random access of unstruct
 |                                  `false` |                             `false` | `~`                          | False               |
 |                                   `null` |                              `null` | `?`                          | Null                |
 |                                     `''` |                                `""` | `$`                          | Empty String        |
-|                               `'Banana'` |                          `"Banana"` | `Banana'`                    | B64 String          |
+|                               `'Banana'` |                          `"Banana"` | `Banana@`                    | B64 String          |
 |                            `'Hi, World'` |                       `"Hi, World"` | `9$Hi, World`                | String              |
 |                                    `'🍌'` |                               `"🍌"` | `4$🍌`                        | UTF-8 String        |
 |                            `[ 1, 2, 3] ` |                       `[ 1, 2, 3] ` | `6;2+4+6+`                   | Lists               |
 |                      `[ 100, 100, 100 ]` |                 `[ 100, 100, 100 ]` | `6;1**38+`                   | Lists with Pointers |
 |                            `[ 1, 2, 3 ]` |                       `[ 1, 2, 3 ]` | `6\|3;2+4+6+`                | Counted Lists       |
-|                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c:a'2+b'4+c'6+`             | Maps                |
-|                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c\|3:a'b'c'2+4+6+`          | Counted Maps        |
-| `[ { name: 'Alice' }, { name: 'Bob' } ]` | `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice'9:name'Bob'` | Repeated Keys       |
+|                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c:a@2+b@4+c@6+`             | Maps                |
+|                   `{ a: 1, b: 2, c: 3 }` |               `{"a":1,"b":2,"c":3}` | `c\|3:a@b@c@2+4+6+`          | Counted Maps        |
+| `[ { name: 'Alice' }, { name: 'Bob' } ]` | `[{"name":"Alice"},{"name":"Bob"}]` | `l\|2;8:8*Alice@9:name@Bob@` | Repeated Keys       |
 |                 `new Map([[1,2],[3,4]])` |                                 N/A | `8\|2:2+6+4+8+`              | Non-string Keys     |
 |          `new Uint8Array([213,231,187])` |                                 N/A | `4=1ee7`                     | Bytes               |
 
@@ -93,7 +93,7 @@ const sampleDoc = {
 
 const encoded = stringify(sampleDoc)
 console.log(encoded)
-// 1B|3:person'list'11*H|4:name'age'id'c$ai-generated8$John DoeY+61O+!a;2+4+6+8+a+n|2:b*nested'6*a:key'value'
+// 1B|3:person@list@11*H|4:name@age@id@c$ai-generated8$John DoeY+61O+!a;2+4+6+8+a+n|2:b*nested@6*a:key@value@
 
 const decoded = parse(encoded)
 console.log(decoded)
@@ -158,7 +158,7 @@ Rando can encode unicode strings using UTF-8 as well as arbitrary binary data us
 Since strings are so common in most data sets a few special types exist to shave the bytes.
 
 ```
-  b64-string:  b64String `'`
+  b64-string:  b64String `@`
  utf8-string:  len `$` utf-8-data
        bytes:  len `=` base64-data
        chain:  len `,` ( b64-string | string | bytes | pointer | reference | chain )*
