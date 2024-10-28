@@ -185,7 +185,7 @@ export interface DecodeOptions {
   knownValues?: unknown[]
 }
 
-const defaults: Required<EncodeOptions> = {
+export const defaults: Required<EncodeOptions> = {
   blockSize: 64 ** 3,
   mapCountedLimit: 1,
   listCountedLimit: 10,
