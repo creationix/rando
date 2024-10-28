@@ -548,6 +548,7 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       depth++
       for (let i = entries.length - 1; i >= 0; i--) {
         const [key, value] = entries[i]
+        if (value === undefined) continue
         encodeAny(value, 1)
         encodeAny(key)
       }
@@ -555,20 +556,24 @@ export function encode(rootVal: unknown, options: EncodeOptions = {}) {
       return pushHeader(MAP, offset - before, trim)
     }
     depth++
+    let count = 0
     for (let i = entries.length - 1; i >= 0; i--) {
       const [_, value] = entries[i]
+      if (value === undefined) continue
       encodeAny(value)
     }
     if (prettyPrint) {
       pushRaw(new Uint8Array([10]))
     }
     for (let i = entries.length - 1; i >= 0; i--) {
-      const [key] = entries[i]
+      const [key, value] = entries[i]
+      if (value === undefined) continue
       encodeAny(key)
+      count++
     }
 
     depth--
-    return pushHeaderPair(MAP, offset - before, entries.length, trim)
+    return pushHeaderPair(MAP, offset - before, count, trim)
   }
 
   function encodeAny(val: unknown, trim = -1): void {
