@@ -17,7 +17,7 @@ const DECIMAL = '.' // Decimal (base 10 exponent) number as zigzag(base)|zigzag(
 const SEP = '|'
 
 // Byte Container Types
-const B64_STRING = "'" // base64 digits are the string itself
+const B64_STRING = "@" // base64 digits are the string itself
 const STRING = '$' // Contains UTF-8 encoded string bytes
 const BYTES = '=' // Contains RAW bytes as BASE64URL encoded string
 const CHAIN = ',' // String, bytes, or regexp broken into pieces
