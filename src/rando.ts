@@ -643,7 +643,7 @@ export function parse(rando: string, options: DecodeOptions = {}): unknown {
 }
 
 export function decode(rando: Uint8Array, options: DecodeOptions = {}) {
-  const knownValues = options.knownValues ?? []
+  const knownValues = options.knownValues ?? defaults.knownValues ?? []
   return decodeAny(0)[0]
   function decodeAny(offset: number): [unknown, number] {
     // trim leading whitespace
