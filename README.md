@@ -19,6 +19,12 @@
 
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
+
+| Indexed | Delimited |
+| ------- | --------- |
+| ![Railroad diagram of indexed rando](img/indexed-rando.png) | ![Railroad diagram of delimited rando](img/delimeted-rando.png) |
+
+
 |                                       JS |                                JSON | Rando                        | Comment             |
 | ---------------------------------------: | ----------------------------------: | :--------------------------- | ------------------- |
 |                                      `0` |                                 `0` | `+`                          | Integers            |

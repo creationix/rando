@@ -1,0 +1,193 @@
+rvalue
+  = varint, 
+    ( "&"
+    | "+"
+    | "|", varint, ( "/" | "." )
+    | "@"
+    | "$", string
+    | "=", bytes
+    | ":", { pointer }
+    | ";", { pointer }
+    | ",", { pointer }
+    | "^", { pointer }, rvalue
+    )
+  | "!"
+  | "~"
+  | "?"
+  ;
+
+ivalue
+  = varint, 
+    ( "&"
+    | "+"
+    | "|", varint, ( "/" | "." )
+    | "@"
+    | "$", string
+    | "=", bytes
+    )
+  | "!"
+  | "~"
+  | "?"
+  | "{", { key, ivalue }, "}"
+  | "[", { ivalue }, "]"
+  | "<", { ivalue }, ">"
+  | "(", { ivalue }, ivalue,")"
+  ;
+
+pointer = digit, { digit };
+string = { utf8_char };
+bytes = { digit };
+
+
+(*
+  An unsigned integer as zero or more digits.
+  The leftmost is most significant in base 64.
+  Encoding zero is an zero-length string.
+
+  0 -> ""
+  1 -> "1"
+  10 -> "a"
+  35 -> "z"
+  36 -> "A"
+  61 -> "Z"
+  62 -> "-"
+  63 -> "_"
+  64 => "10"
+*)
+varint = { digit };
+
+(*
+  This is the same digits as url-safe base64, but used as normal integer digits.
+  Note that the order is slightly different to be an extension of typical hexadecimal.
+*)
+digit
+  = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7"
+  | "8" | "9" | "a" | "b" | "c" | "d" | "e" | "f"
+  | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n"
+  | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v"
+  | "w" | "x" | "y" | "z" | "A" | "B" | "C" | "D"
+  | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L"
+  | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T"
+  | "U" | "V" | "W" | "X" | "Y" | "Z" | "-" | "_"
+  ;
+
+
+(*
+  Zero or more key-value pairs
+  - first varint in byte length
+  - second varint is item count
+  - third varint is index pointer width 
+*)
+map
+  = varint, 
+    ( ":"
+    | "|", varint,
+      ( ":"
+      | "|", varint, ":", index
+      )
+    ), { key, value }
+  | "{", { key, value }, "}"
+  ;
+
+(*
+  Zero of more values in a list
+  - first varint in byte length
+  - second varint is item count
+  - third varint is index pointer width 
+*)
+list
+  = varint, 
+    ( ";" 
+    | "|", varint, 
+      ( ";" 
+      | "|", varint, ";", index
+      )
+    ), { value }
+  | "[", { value }, "]"
+  ;
+
+chain
+  = varint, ",", { value }
+  | "(", { value }, ")"
+  ;
+
+value
+  = string
+  | bytes
+  | number
+  | reference
+  | map
+  | list
+  | chain
+  | true
+  | false
+  | null
+  ;
+
+(* Contains UTF-8 encoded string *)
+(* base64 digits are the string itself in the second form *)
+string
+  = varint, "$", { utf8_char }
+  | varint, "@"
+  ;
+
+(* Binary data encoded as BASE64URL without padding *)
+bytes
+  = varint, "=", { digit }
+  | "<", { digit }, ">"
+  ;
+
+(* Integer as zigzag(N) *)
+(* Rational number as zigzag(num)|dem *)
+(* Decimal (base 10 exponent) number as zigzag(base)|zigzag(exp) *)
+number = varint, 
+  ( "+"
+  | "|", varint,
+    ( "/" | "." )
+  );
+
+(* Reference to shared known value by offset index *)
+reference = varint, "&";
+
+true = "!";
+false = "~";
+null = "?";
+
+
+(* string or reference to string *)
+key = string | reference;
+
+(* All pointers are fixed width integers using the base 64 digits (most significant left) *)
+index = digit, { digit };
+
+(*
+  An unsigned integer as zero or more digits.
+  The leftmost is most significant in base 64.
+  Encoding zero is an zero-length string.
+
+  0 -> ""
+  1 -> "1"
+  10 -> "a"
+  35 -> "z"
+  36 -> "A"
+  61 -> "Z"
+  62 -> "-"
+  63 -> "_"
+  64 => "10"
+*)
+varint = { digit };
+
+(*
+  This is the same digits as url-safe base64, but used as normal integer digits.
+  Note that the order is slightly different to be an extension of typical hexadecimal.
+*)
+digit
+  = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7"
+  | "8" | "9" | "a" | "b" | "c" | "d" | "e" | "f"
+  | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n"
+  | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v"
+  | "w" | "x" | "y" | "z" | "A" | "B" | "C" | "D"
+  | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L"
+  | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T"
+  | "U" | "V" | "W" | "X" | "Y" | "Z" | "-" | "_"
+  ;
