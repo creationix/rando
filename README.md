@@ -19,6 +19,9 @@
 
 Rando is a new serialization format optimized for fast random access of unstructured data.
 
+# Railroad Diagrams
+
+To better understand the two variants, these railroad diagrams help understand the syntax of the encoding.
 
 | Indexed | Delimited |
 | ------- | --------- |
